@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 
-// ✅ Valeurs cohérentes avec la BD
 const QUALITE_OPTIONS = [
   { label: 'Très bonne', value: 'bonne',    color: '#be1526' },
   { label: 'Bonne',      value: 'moyenne',  color: '#ff0921' },
@@ -32,16 +31,23 @@ export default function ModifierCartePage() {
   const [importLoading, setImportLoading] = useState(false);
 
   const [formData, setFormData] = useState({ nom: '', qualite: 'bonne' });
-  const [initialPolygons, setInitialPolygons] = useState([]);
+  const [initialPolygons, setInitialPolygons] = useState<any[]>([]);
+  // ✅ polygones = état actuel (modifiés + nouveaux)
   const [polygones, setPolygones] = useState<any[]>([]);
+  const [carteId, setCarteId] = useState<number | undefined>(undefined);
 
   const [shpFile, setShpFile] = useState<File | null>(null);
   const [dbfFile, setDbfFile] = useState<File | null>(null);
+  const [shxFile, setShxFile] = useState<File | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [excludeQualite, setExcludeQualite] = useState<string | undefined>(undefined);
+  const [importCount, setImportCount] = useState(0);
+
+  const qualiteAtImportRef = useRef<string>('bonne');
 
   const shpRef = useRef<HTMLInputElement>(null);
   const dbfRef = useRef<HTMLInputElement>(null);
+  const shxRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchCarte = async () => {
@@ -54,7 +60,11 @@ export default function ModifierCartePage() {
           nom: data.nom,
           qualite: data.polygones?.[0]?.qualite || 'bonne'
         });
-        setInitialPolygons(data.polygones || []);
+        const polys = data.polygones || [];
+        setInitialPolygons(polys);
+        // ✅ Initialiser polygones avec les polygones existants
+        setPolygones(polys);
+        setCarteId(data.id);
       } catch {
         toast.error("Impossible de charger les données de la carte");
       } finally {
@@ -71,14 +81,18 @@ export default function ModifierCartePage() {
     const body = new FormData();
     body.append('shp', shpFile);
     body.append('dbf', dbfFile);
+    if (shxFile) body.append('shx', shxFile);
     body.append('qualite', formData.qualite);
     body.append('session_id', sessionId);
+
+    qualiteAtImportRef.current = formData.qualite;
 
     try {
       const res = await fetch('http://localhost:3000/cartes-couverture/preview-shp-temp', { method: 'POST', body });
       if (res.ok) {
         setCurrentSessionId(sessionId);
         setExcludeQualite(formData.qualite);
+        setImportCount(prev => prev + 1);
         toast.success("Aperçu chargé sur la carte");
       } else { throw new Error(); }
     } catch { toast.error("Erreur lors de l'importation"); }
@@ -88,20 +102,37 @@ export default function ModifierCartePage() {
   const handleSave = async () => {
     setLoading(true);
     try {
+      const body: any = {
+        nom: formData.nom,
+        // ✅ polygones = état actuel — modifiés + nouveaux + supprimés
+        // Ne touche pas shp_layers (SHP importés) — géré séparément via session_id
+        polygones: polygones,
+      };
+
+      // ✅ SHP importé — transférer shp_temp vers shp_layers
+      if (currentSessionId) {
+        body.session_id = currentSessionId;
+        body.qualite = qualiteAtImportRef.current;
+      }
+
+      console.log('Body envoyé au backend:', body);
+
       const res = await fetch(`http://localhost:3000/cartes-couverture/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nom: formData.nom,
-          qualite: formData.qualite,
-          polygones,
-          session_id: currentSessionId
-        }),
+        body: JSON.stringify(body),
       });
+
+      console.log('Status réponse:', res.status);
+
       if (res.ok) {
         toast.success("Carte mise à jour");
         router.push('/dashboard/cartes');
-      } else { throw new Error(); }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.log('Erreur backend:', err);
+        throw new Error();
+      }
     } catch { toast.error("Erreur lors de la mise à jour"); }
     finally { setLoading(false); }
   };
@@ -186,7 +217,7 @@ export default function ModifierCartePage() {
                   }`}
                 >
                   <FileUp size={16} className={shpFile ? 'text-emerald-600' : 'text-gray-400'} />
-                  <span className="text-[10px] font-black uppercase truncate">{shpFile ? shpFile.name : 'Fichier .SHP'}</span>
+                  <span className="text-[10px] font-black uppercase truncate">{shpFile ? shpFile.name : 'Fichier .SHP *'}</span>
                   <input ref={shpRef} type="file" accept=".shp" className="hidden" onChange={(e) => setShpFile(e.target.files?.[0] || null)} />
                 </button>
 
@@ -197,8 +228,19 @@ export default function ModifierCartePage() {
                   }`}
                 >
                   <FileUp size={16} className={dbfFile ? 'text-emerald-600' : 'text-gray-400'} />
-                  <span className="text-[10px] font-black uppercase truncate">{dbfFile ? dbfFile.name : 'Fichier .DBF'}</span>
+                  <span className="text-[10px] font-black uppercase truncate">{dbfFile ? dbfFile.name : 'Fichier .DBF *'}</span>
                   <input ref={dbfRef} type="file" accept=".dbf" className="hidden" onChange={(e) => setDbfFile(e.target.files?.[0] || null)} />
+                </button>
+
+                <button
+                  onClick={() => shxRef.current?.click()}
+                  className={`w-full flex items-center gap-3 p-4 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
+                    shxFile ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-gray-300 bg-gray-50'
+                  }`}
+                >
+                  <FileUp size={16} className={shxFile ? 'text-emerald-600' : 'text-gray-300'} />
+                  <span className="text-[10px] font-black uppercase truncate text-gray-400">{shxFile ? shxFile.name : 'Fichier .SHX (optionnel)'}</span>
+                  <input ref={shxRef} type="file" accept=".shx" className="hidden" onChange={(e) => setShxFile(e.target.files?.[0] || null)} />
                 </button>
 
                 <button
@@ -213,9 +255,11 @@ export default function ModifierCartePage() {
               {currentSessionId && (
                 <div className="mt-3 flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
                   <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-                  <span className="text-[9px] font-black text-emerald-700 uppercase">Aperçu chargé — qualité {
-                    QUALITE_OPTIONS.find(q => q.value === formData.qualite)?.label
-                  } remplacée</span>
+                  <span className="text-[9px] font-black text-emerald-700 uppercase">
+                    Aperçu chargé — qualité {
+                      QUALITE_OPTIONS.find(q => q.value === qualiteAtImportRef.current)?.label
+                    } sera remplacée
+                  </span>
                 </div>
               )}
             </div>
@@ -227,10 +271,15 @@ export default function ModifierCartePage() {
           <MapComponent
             qualiteColor={currentQualite.color}
             qualite={formData.qualite}
+            // ✅ Nouveau polygone dessiné — ajouter à la liste
             onSave={(newPolygon) => setPolygones(prev => [...prev, newPolygon])}
+            // ✅ Polygones modifiés/supprimés — remplacer toute la liste
+            onEdit={(updatedPolygons) => setPolygones(updatedPolygons)}
             initialPolygons={initialPolygons}
+            carteId={carteId}
             sessionId={currentSessionId}
             excludeQualite={excludeQualite}
+            importCount={importCount}
           />
         </section>
       </div>

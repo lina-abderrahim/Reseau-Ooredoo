@@ -161,7 +161,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     hasChecked.current = true;
 
     const checkAuth = async () => {
-      const raw = localStorage.getItem('auth_user');
+      // ✅ Lire auth_admin au lieu de auth_user
+      const raw = sessionStorage.getItem('auth_admin');
       if (!raw) { router.replace('/login'); return; }
       const user = JSON.parse(raw);
       if (!user || user.role !== 'admin') { router.replace('/login'); return; }
@@ -206,7 +207,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_user');
+    // ✅ Supprimer auth_admin
+    sessionStorage.removeItem('auth_admin');
     router.push('/login');
   };
 
@@ -225,7 +227,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         collapsed ? 'w-20' : 'w-64'
       }`}>
 
-        {/* Logo */}
         <div className="h-20 flex items-center justify-center px-4 border-b border-gray-50">
           {!collapsed ? (
             <Link href="/dashboard_admin" className="transition-transform hover:scale-[1.02]">
@@ -240,7 +241,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           )}
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           <SidebarItem href="/dashboard_admin" icon={<LayoutDashboard size={16} />} label="Dashboard" active={pathname === '/dashboard_admin'} collapsed={collapsed} />
           <SidebarItem href="/dashboard_admin/cartes" icon={<CheckSquare size={16} />} label="Valider les cartes" active={pathname.startsWith('/dashboard_admin/cartes')} collapsed={collapsed} />
@@ -252,7 +252,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <SidebarItem href="/dashboard_admin/parametres" icon={<Settings size={16} />} label="Paramètres" active={pathname.startsWith('/dashboard_admin/parametres')} collapsed={collapsed} />
         </nav>
 
-        {/* Toggle Panel Button */}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="absolute -right-3 top-8 bg-white border border-gray-200 rounded-lg p-1 shadow-sm hover:bg-gray-50 transition-all z-50 text-red-600"
@@ -260,7 +259,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {collapsed ? <Menu size={12} /> : <ChevronLeft size={12} />}
         </button>
 
-        {/* Logout */}
         <div className="p-3 border-t border-gray-100 bg-gray-50/40">
           <button
             onClick={handleLogout}
@@ -272,16 +270,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
+      {/* MAIN */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
 
-        {/* Header */}
         <header className="h-20 bg-white border-b border-gray-100 px-8 flex items-center justify-between flex-shrink-0 z-30 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="w-1 h-4 bg-red-600 rounded-full" />
-            <span className="text-xs font-bold text-gray-800 uppercase tracking-wider">SIG Network Admin</span>
+            <span className="text-xs font-bold text-gray-800 uppercase tracking-wider">SIG Network Planner</span>
           </div>
-          
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2.5 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">
               <div className="w-6 h-6 bg-red-600 rounded-lg flex items-center justify-center text-white text-xs font-bold">
@@ -292,7 +288,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </header>
 
-        {/* Viewport content */}
         <main className="flex-1 overflow-y-auto p-8 bg-gray-50/40">
           {children}
         </main>
@@ -300,7 +295,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <ChatBot />
 
-      {/* MODAL COMPTE REQUIS */}
       {mustChangePassword && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[99999] p-4">
           <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md border border-gray-100">
@@ -312,25 +306,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p className="text-gray-500 mt-1 text-xs">Veuillez personnaliser votre mot de passe pour continuer.</p>
             </div>
             <div className="space-y-3">
-              <input
-                type="password"
-                placeholder="Nouveau mot de passe"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-600 text-xs transition-colors"
-              />
-              <input
-                type="password"
-                placeholder="Confirmation du mot de passe"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-600 text-xs transition-colors"
-              />
-              <button
-                onClick={handleChangePassword}
-                disabled={changingPassword || !newPassword}
-                className="w-full py-3 bg-red-600 text-white rounded-xl font-semibold text-xs hover:bg-red-700 transition-colors shadow-sm disabled:opacity-50"
-              >
+              <input type="password" placeholder="Nouveau mot de passe"
+                value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-600 text-xs transition-colors" />
+              <input type="password" placeholder="Confirmation du mot de passe"
+                value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-600 text-xs transition-colors" />
+              <button onClick={handleChangePassword} disabled={changingPassword || !newPassword}
+                className="w-full py-3 bg-red-600 text-white rounded-xl font-semibold text-xs hover:bg-red-700 transition-colors shadow-sm disabled:opacity-50">
                 {changingPassword ? 'Mise à jour...' : 'Valider mon compte'}
               </button>
             </div>

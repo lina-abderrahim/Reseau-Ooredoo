@@ -4,30 +4,53 @@ import { Repository } from 'typeorm';
 import { Service } from './entities/service.entity';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
+import { ServiceTechnology } from '../service-technologies/entities/service-technology.entity';
+import { Technology } from '../technologies/entities/technology.entity';
 
 @Injectable()
 export class ServicesService {
-
   constructor(
     @InjectRepository(Service)
-    private readonly serviceRepository: Repository<Service>,
+    private readonly serviceRepo: Repository<Service>,
+
+    @InjectRepository(ServiceTechnology)
+    private readonly stRepo: Repository<ServiceTechnology>,
+
+    @InjectRepository(Technology)
+    private readonly techRepo: Repository<Technology>,
   ) {}
 
   async create(createDto: CreateServiceDto) {
-    const service = this.serviceRepository.create(createDto);
-    return await this.serviceRepository.save(service);
+    const service = this.serviceRepo.create(createDto);
+    const saved = await this.serviceRepo.save(service);
+
+    // ✅ Créer automatiquement les combinaisons avec toutes les technologies existantes
+    const techs = await this.techRepo
+      .createQueryBuilder('tech')
+      .select(['tech.id'])
+      .getMany();
+
+    for (const tech of techs) {
+      await this.stRepo.save(
+        this.stRepo.create({
+          technology: { id: tech.id },
+          service: { id: saved.id },
+        })
+      );
+    }
+
+    return saved;
   }
 
-  // ✅ Sans relations — évite circular reference
   async findAll(): Promise<Service[]> {
-    return await this.serviceRepository
+    return await this.serviceRepo
       .createQueryBuilder('service')
       .select(['service.id', 'service.nom_service', 'service.created_at'])
       .getMany();
   }
 
   async findOne(id: number): Promise<Service> {
-    const service = await this.serviceRepository
+    const service = await this.serviceRepo
       .createQueryBuilder('service')
       .select(['service.id', 'service.nom_service', 'service.created_at'])
       .where('service.id = :id', { id })
@@ -37,13 +60,20 @@ export class ServicesService {
   }
 
   async update(id: number, updateDto: UpdateServiceDto) {
-    const service = await this.serviceRepository.preload({ id, ...updateDto });
+    const service = await this.serviceRepo.preload({ id, ...updateDto });
     if (!service) throw new NotFoundException(`Service #${id} non trouvé`);
-    return this.serviceRepository.save(service);
+    return this.serviceRepo.save(service);
   }
 
   async remove(id: number) {
+    // ✅ Supprimer d'abord les combinaisons dans service_technologies
+    await this.stRepo
+      .createQueryBuilder()
+      .delete()
+      .where('service_id = :id', { id })
+      .execute();
+
     const service = await this.findOne(id);
-    return this.serviceRepository.remove(service);
+    return this.serviceRepo.remove(service);
   }
 }

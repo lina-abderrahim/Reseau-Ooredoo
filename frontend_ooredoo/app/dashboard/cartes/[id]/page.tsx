@@ -4,14 +4,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { 
-  ArrowLeft, Map, User, Calendar, Wifi, Radio, 
-  Clock, CheckCircle, XCircle, Copy, FileText, 
+import {
+  ArrowLeft, Map, User, Calendar, Wifi, Radio,
+  Clock, CheckCircle, XCircle, Copy, FileText, Edit,
   StickyNote
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const ReadOnlyMap = dynamic(() => import('@/components/ReadOnlyMap'), { 
+const ReadOnlyMap = dynamic(() => import('@/components/ReadOnlyMap'), {
   ssr: false,
   loading: () => (
     <div className="h-[400px] w-full bg-gray-50 animate-pulse rounded-2xl flex items-center justify-center">
@@ -53,7 +53,7 @@ export default function IngenieurCarteDetailPage() {
     setDuplicateLoading(true);
     const toastId = toast.loading('Duplication de la carte en cours...');
     try {
-      const raw = localStorage.getItem('auth_user');
+      const raw = sessionStorage.getItem('auth_user');
       if (!raw) { router.push('/login'); return; }
       const user = JSON.parse(raw);
 
@@ -64,6 +64,7 @@ export default function IngenieurCarteDetailPage() {
           nom: `${carte.nom} (copie)`,
           description: carte.description || '',
           statut: 'en_attente',
+          is_duplicated: true,
           user_id: user.id,
           service_technologie_id: carte.service_technologie?.id,
           polygones: carte.polygones?.map((p: any) => ({
@@ -83,7 +84,7 @@ export default function IngenieurCarteDetailPage() {
           console.error('Erreur duplication SHP:', e);
         }
         toast.success('Carte dupliquée avec succès', { id: toastId });
-        router.push(`/dashboard/cartes/${newCarte.id}/modifier`);
+        router.push(`/dashboard/cartes/${newCarte.id}`);
       } else {
         toast.error('Erreur lors de la duplication', { id: toastId });
       }
@@ -209,10 +210,23 @@ export default function IngenieurCarteDetailPage() {
             )}
           </div>
 
-          {/* ✅ Actions */}
+          {/* Actions */}
           <div className="space-y-3">
+            {carte.statut === 'en_attente' && carte.is_duplicated && (
+              <div className="space-y-4">
+                <button
+                  onClick={() => router.push(`/dashboard/cartes/${carte.id}/modifier`)}
+                  className="w-full py-4 bg-[#ED1C24] text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 hover:bg-black transition-all shadow-lg shadow-red-500/20"
+                >
+                  <Edit size={18} />
+                  Modifier la carte
+                </button>
+                <p className="text-[10px] text-gray-400 text-center font-bold px-4">
+                  * Vous pouvez modifier cette carte dupliquée avant soumission.
+                </p>
+              </div>
+            )}
 
-            {/* Dupliquer — uniquement si refusée */}
             {carte.statut === 'refuse' && (
               <div className="space-y-4">
                 <button
@@ -234,7 +248,6 @@ export default function IngenieurCarteDetailPage() {
         {/* Colonne droite */}
         <div className="lg:col-span-2 space-y-6">
 
-          {/* Carte */}
           <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="p-5 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -248,16 +261,16 @@ export default function IngenieurCarteDetailPage() {
               )}
             </div>
             <div className="h-[500px] w-full relative">
+              {/* ✅ polygons local — instantané */}
               <ReadOnlyMap
                 polygons={carte.polygones || []}
+                carteId={carte.id}
                 commentaire_refus={carte.commentaire_refus}
                 type_commentaire={carte.type_commentaire}
-                carteId={carte.id}
               />
             </div>
           </div>
 
-          {/* Commentaire de refus */}
           {carte.statut === 'refuse' && carte.commentaire_refus && (
             <div className="bg-red-50 rounded-3xl border-2 border-red-100 p-6 space-y-4 shadow-sm shadow-red-500/5">
               <div className="flex items-center gap-3 border-b border-red-200 pb-3">

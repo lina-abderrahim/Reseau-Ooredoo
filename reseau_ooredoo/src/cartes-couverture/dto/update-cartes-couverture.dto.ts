@@ -10,4 +10,7 @@ export class UpdateCartesCouvertureDto {
     coordinates: string;
     qualite: string;
   }[];
+  // ✅ Ajoutés pour la modification avec import SHP
+  session_id?: string;
+  qualite?: string;
 }

@@ -5,7 +5,6 @@ import {
   CreateDateColumn, 
   OneToMany 
 } from 'typeorm';
-
 import { ServiceTechnology } from '../../service-technologies/entities/service-technology.entity';
 
 @Entity('technologies')
@@ -20,7 +19,9 @@ export class Technology {
   @CreateDateColumn()
   created_at: Date;
 
-
-  @OneToMany(() => ServiceTechnology, (st) => st.technology, { lazy: true })
-  serviceTechnologies: Promise<ServiceTechnology[]>;
+  @OneToMany(() => ServiceTechnology, (st) => st.technology, {
+    cascade: true,
+    onDelete: 'CASCADE',
+  })
+  serviceTechnologies: ServiceTechnology[];
 }

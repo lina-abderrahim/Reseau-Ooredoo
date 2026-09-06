@@ -43,7 +43,18 @@ export default function LoginPage() {
       }
 
       const user = await response.json();
-      localStorage.setItem('auth_user', JSON.stringify(user));
+
+      // ✅ Clé séparée selon le rôle pour éviter les conflits entre onglets
+      const storageKey = user.role === 'admin' ? 'auth_admin' : 'auth_user';
+
+      // ✅ Vider l'ancienne session de l'autre rôle
+      if (user.role === 'admin') {
+        sessionStorage.removeItem('auth_user');
+      } else {
+        sessionStorage.removeItem('auth_admin');
+      }
+
+      sessionStorage.setItem(storageKey, JSON.stringify(user));
 
       if (user.must_change_password) {
         router.push('/change-password');
@@ -59,13 +70,11 @@ export default function LoginPage() {
   };
 
   return (
-    // 🌟 FOND GLOBAL BLANC PUR (#FFFFFF) pour fusionner parfaitement avec le fond du logo
     <div className="min-h-screen bg-white flex flex-col justify-center items-center px-4 font-sans text-gray-900 selection:bg-[#ED1C24] selection:text-white">
       <Toaster position="top-right" />
 
       <div className="w-full max-w-[420px] space-y-8">
         
-        {/* En-tête : Uniquement le Logo désormais */}
         <div className="flex flex-col items-center">
           <Image
             src="/logo_2.png"
@@ -77,10 +86,8 @@ export default function LoginPage() {
           />
         </div>
 
-        {/* Bloc Formulaire épuré sur fond légèrement texturé pour donner du relief */}
         <div className="bg-[#FAFACA] bg-gray-50/50 rounded-[2rem] border border-gray-100 p-8 space-y-6 shadow-sm">
           
-          {/* Message d'erreur */}
           {error && (
             <div className="flex items-center gap-3 p-3.5 bg-red-50 border border-red-100 rounded-xl">
               <AlertCircle size={16} className="text-[#ED1C24] flex-shrink-0" />
@@ -88,10 +95,8 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Champs de saisie */}
           <div className="space-y-4">
             
-            {/* Email */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">
                 Email
@@ -109,7 +114,6 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Mot de passe */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">
                 Password
@@ -136,7 +140,6 @@ export default function LoginPage() {
 
           </div>
 
-          {/* Bouton Log In Rouge Ooredoo */}
           <button
             onClick={handleLogin}
             disabled={loading}
@@ -154,7 +157,6 @@ export default function LoginPage() {
 
         </div>
 
-        {/* Mentions Techniques de bas de page */}
         <p className="text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider">
           Direction des Technologies Réseau — Ooredoo Tunisie
         </p>

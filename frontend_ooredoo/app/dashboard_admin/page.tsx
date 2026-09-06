@@ -137,7 +137,7 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem('auth_user');
+    const raw = sessionStorage.getItem('auth_user');
     if (raw) {
       const user = JSON.parse(raw);
       setUserName(user.name || 'Administrateur');
@@ -163,16 +163,6 @@ export default function AdminDashboard() {
             Bienvenue, {userName} — Supervision globale du réseau SIG Ooredoo
           </p>
         </motion.div>
-
-        <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-gray-100 shadow-sm self-start md:self-auto">
-          <div className="w-10 h-10 rounded-lg bg-red-600 flex items-center justify-center text-white">
-            <Activity size={18} className="animate-pulse" />
-          </div>
-          <div className="pr-4">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Système</p>
-            <p className="text-xs font-bold text-gray-900 uppercase tracking-tight">Opérationnel</p>
-          </div>
-        </div>
       </header>
 
       {/* Stats Grid */}
@@ -370,3 +360,5 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+

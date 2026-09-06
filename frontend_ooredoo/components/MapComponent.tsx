@@ -25,7 +25,7 @@ interface MapProps {
   sessionId?: string;
   carteId?: number;
   excludeQualite?: string;
-  importCount?: number; // ✅ incrémenté à chaque import pour forcer le rechargement
+  importCount?: number;
 }
 
 export default function MapComponent({
@@ -57,13 +57,25 @@ export default function MapComponent({
   const sessionIdRef = useRef(sessionId);
   const carteIdRef = useRef(carteId);
   const excludeQualiteRef = useRef(excludeQualite);
+
   const [isClient, setIsClient] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [clickCoords, setClickCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  // ✅ Mode recherche
+  const [searchMode, setSearchMode] = useState<'adresse' | 'coords'>('adresse');
+
+  // ✅ Recherche adresse
   const [searchQuery, setSearchQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showResults, setShowResults] = useState(false);
+
+  // ✅ Recherche coordonnées
+  const [coordLat, setCoordLat] = useState('');
+  const [coordLng, setCoordLng] = useState('');
+  const [coordError, setCoordError] = useState('');
+
   const isLongPressRef = useRef(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -88,10 +100,7 @@ export default function MapComponent({
   useEffect(() => { carteIdRef.current = carteId; }, [carteId]);
   useEffect(() => { excludeQualiteRef.current = excludeQualite; }, [excludeQualite]);
 
-  // ─────────────────────────────────────────────────────────
-  // ✅ Chargement GeoJSON quand sessionId change
-  // Accumule tous les layers sans supprimer les précédents
-  // ─────────────────────────────────────────────────────────
+  // ✅ GeoJSON pour shp_temp
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !isClient || !sessionId) return;
@@ -100,45 +109,31 @@ export default function MapComponent({
       try {
         const L = (await import('leaflet')).default;
 
-        // ✅ Supprimer uniquement l'ancien layer du MÊME sessionId
-        // (pas les autres qualités déjà affichées)
         if (vectorGridLayerRef.current) {
           try { map.removeLayer(vectorGridLayerRef.current); } catch { }
           vectorGridLayerRef.current = null;
         }
 
-        // ✅ Charger TOUTES les qualités du sessionId courant
         const res = await fetch(`http://localhost:3000/tiles/temp/${sessionId}/geojson`);
         if (!res.ok) return;
         const geojson = await res.json();
-
         if (!geojson?.features?.length) return;
 
         const layer = L.geoJSON(geojson, {
           style: (feature: any) => {
             const color = QUALITE_COLOR_MAP[feature?.properties?.qualite] || '#be1526';
-            return {
-              fillColor: color,
-              fillOpacity: 0.4,
-              color: color,
-              weight: 1.5,
-            };
+            return { fillColor: color, fillOpacity: 0.4, color, weight: 1.5 };
           }
         }).addTo(map);
 
         vectorGridLayerRef.current = layer;
+        try { map.fitBounds(layer.getBounds(), { padding: [20, 20] }); } catch { }
 
-        try {
-          map.fitBounds(layer.getBounds(), { padding: [20, 20] });
-        } catch { }
-
-      } catch (e) {
-        console.error('Erreur chargement GeoJSON:', e);
-      }
+      } catch (e) { console.error('Erreur GeoJSON temp:', e); }
     };
 
     loadGeoJson();
-  }, [sessionId, isClient, importCount]); // ✅ importCount force le rechargement
+  }, [sessionId, isClient, importCount]);
 
   useEffect(() => {
     const handleFsChange = () => {
@@ -229,6 +224,7 @@ export default function MapComponent({
         map.addLayer(drawnItems);
         drawnItemsRef.current = drawnItems;
 
+        // ✅ Polygones manuels
         const bounds: any[] = [];
         if (initialPolygons?.length > 0) {
           initialPolygons.forEach((polygone) => {
@@ -247,9 +243,7 @@ export default function MapComponent({
           }
         }
 
-        // ─────────────────────────────────────────────────────────
-        // MVT pour carte existante (carteId) — reste en MVT car déjà sauvegardée
-        // ─────────────────────────────────────────────────────────
+        // ✅ MVT canvas pour shp_layers
         if (carteIdRef.current) {
           try {
             const excludeParam = excludeQualiteRef.current ? `?exclude_qualite=${excludeQualiteRef.current}` : '';
@@ -264,17 +258,26 @@ export default function MapComponent({
               maxZoom: 19,
               maxNativeZoom: 19,
               interactive: false,
-              rendererFactory: (L as any).svg.tile,
+              rendererFactory: (L as any).canvas.tile,
             });
             vectorGridLayer.addTo(map);
             vectorGridCarteRef.current = vectorGridLayer;
+
+            if (bounds.length === 0) {
+              fetch(`http://localhost:3000/tiles/${carteIdRef.current}/bbox`)
+                .then(r => r.json())
+                .then(bbox => {
+                  if (bbox) map.fitBounds(
+                    [[bbox.ymin, bbox.xmin], [bbox.ymax, bbox.xmax]],
+                    { padding: [20, 20] }
+                  );
+                })
+                .catch(() => {});
+            }
           } catch (e) { console.error('Erreur VectorGrid carteId:', e); }
         }
 
-        // ─────────────────────────────────────────────────────────
-        // ✅ Session temp : chargé via GeoJSON dans le useEffect dédié
-        // (si sessionId est déjà défini au montage)
-        // ─────────────────────────────────────────────────────────
+        // ✅ GeoJSON pour shp_temp au montage
         if (sessionIdRef.current) {
           try {
             const res = await fetch(`http://localhost:3000/tiles/temp/${sessionIdRef.current}/geojson`);
@@ -443,6 +446,7 @@ export default function MapComponent({
     } catch (err) { console.error('Erreur fullscreen:', err); }
   };
 
+  // ✅ Recherche adresse
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearchLoading(true);
@@ -479,6 +483,44 @@ export default function MapComponent({
     setSearchQuery(result.display_name.split(',')[0]);
   };
 
+  // ✅ Recherche coordonnées
+  const handleSearchCoords = async () => {
+    setCoordError('');
+    const lat = parseFloat(coordLat.replace(',', '.'));
+    const lng = parseFloat(coordLng.replace(',', '.'));
+
+    if (isNaN(lat) || isNaN(lng)) {
+      setCoordError('Coordonnées invalides');
+      return;
+    }
+    if (lat < -90 || lat > 90) {
+      setCoordError('Latitude doit être entre -90 et 90');
+      return;
+    }
+    if (lng < -180 || lng > 180) {
+      setCoordError('Longitude doit être entre -180 et 180');
+      return;
+    }
+
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const L = (await import('leaflet')).default;
+
+    map.setView([lat, lng], 14);
+
+    if (clickMarkerRef.current) map.removeLayer(clickMarkerRef.current);
+    const marker = L.marker([lat, lng]).addTo(map);
+    marker.bindPopup(`
+      <div style="font-family:sans-serif;font-size:12px;line-height:1.6;">
+        <strong>Position</strong><br/>
+        Lat: ${lat.toFixed(6)}<br/>
+        Lng: ${lng.toFixed(6)}
+      </div>
+    `).openPopup();
+    clickMarkerRef.current = marker;
+    setClickCoords({ lat, lng });
+  };
+
   if (!isClient) {
     return (
       <div className="h-full w-full bg-gray-100 animate-pulse rounded-2xl flex items-center justify-center">
@@ -501,41 +543,100 @@ export default function MapComponent({
         style={{ position: 'absolute', inset: 0, borderRadius: isFullscreen ? 0 : '1rem' }}
       />
 
-      {/* Barre de recherche */}
+      {/* ✅ Barre de recherche avec tabs */}
       <div style={{
         position: 'absolute', top: 12,
         left: '50%', transform: 'translateX(-50%)',
-        width: '70%', maxWidth: '480px',
+        width: '70%', maxWidth: '500px',
         zIndex: 1000,
       }}>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Rechercher une adresse en Tunisie..."
-            className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 shadow-lg outline-none focus:border-[#ED1C24] text-sm font-medium bg-white transition-all"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          />
+
+        {/* ✅ Tabs */}
+        <div className="flex gap-1 mb-2 bg-white rounded-xl border border-gray-200 p-1 shadow-lg">
           <button
-            onClick={handleSearch}
-            disabled={searchLoading}
-            className="px-4 py-2.5 bg-[#ED1C24] text-white rounded-xl font-bold text-sm hover:bg-black transition-all disabled:opacity-50 shadow-lg"
+            onClick={() => { setSearchMode('adresse'); setCoordError(''); }}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
+              searchMode === 'adresse' ? 'bg-[#ED1C24] text-white' : 'text-gray-400 hover:text-gray-600'
+            }`}
           >
-            {searchLoading ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : 'Rechercher'}
+            Adresse
+          </button>
+          <button
+            onClick={() => { setSearchMode('coords'); setShowResults(false); }}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
+              searchMode === 'coords' ? 'bg-[#ED1C24] text-white' : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            Coordonnées
           </button>
         </div>
 
-        {showResults && searchResults.length > 0 && (
+        {/* ✅ Mode Adresse */}
+        {searchMode === 'adresse' && (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Rechercher une adresse en Tunisie..."
+              className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 shadow-lg outline-none focus:border-[#ED1C24] text-sm font-medium bg-white transition-all"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            />
+            <button
+              onClick={handleSearch}
+              disabled={searchLoading}
+              className="px-4 py-2.5 bg-[#ED1C24] text-white rounded-xl font-bold text-sm hover:bg-black transition-all disabled:opacity-50 shadow-lg"
+            >
+              {searchLoading
+                ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : 'Chercher'
+              }
+            </button>
+          </div>
+        )}
+
+        {/* ✅ Mode Coordonnées */}
+        {searchMode === 'coords' && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Latitude ex: 36.8189"
+                className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 shadow-lg outline-none focus:border-[#ED1C24] text-sm font-medium bg-white transition-all"
+                value={coordLat}
+                onChange={(e) => { setCoordLat(e.target.value); setCoordError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearchCoords()}
+              />
+              <input
+                type="text"
+                placeholder="Longitude ex: 10.1658"
+                className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 shadow-lg outline-none focus:border-[#ED1C24] text-sm font-medium bg-white transition-all"
+                value={coordLng}
+                onChange={(e) => { setCoordLng(e.target.value); setCoordError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearchCoords()}
+              />
+              <button
+                onClick={handleSearchCoords}
+                className="px-4 py-2.5 bg-[#ED1C24] text-white rounded-xl font-bold text-sm hover:bg-black transition-all shadow-lg"
+              >
+                OK
+              </button>
+            </div>
+            {/* ✅ Message erreur coordonnées */}
+            {coordError && (
+              <p className="text-xs font-bold text-red-500 bg-red-50 px-3 py-1.5 rounded-lg">
+                ⚠️ {coordError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ✅ Résultats adresse */}
+        {searchMode === 'adresse' && showResults && searchResults.length > 0 && (
           <div className="mt-1 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
             {searchResults.map((result, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSelectResult(result)}
-                className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors"
-              >
+              <button key={idx} onClick={() => handleSelectResult(result)}
+                className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors">
                 <p className="text-sm font-bold text-gray-900 truncate">{result.display_name.split(',')[0]}</p>
                 <p className="text-xs text-gray-400 truncate">{result.display_name}</p>
               </button>
@@ -543,7 +644,7 @@ export default function MapComponent({
           </div>
         )}
 
-        {showResults && searchResults.length === 0 && (
+        {searchMode === 'adresse' && showResults && searchResults.length === 0 && (
           <div className="mt-1 bg-white rounded-xl shadow-xl border border-gray-200 p-3 text-center">
             <p className="text-sm text-gray-500 font-medium">Aucun résultat trouvé</p>
           </div>
@@ -563,7 +664,7 @@ export default function MapComponent({
         }
       </button>
 
-      {/* Coordonnées */}
+      {/* Coordonnées du clic */}
       {clickCoords && (
         <div
           style={{ position: 'absolute', bottom: 16, right: 12, zIndex: 1000 }}

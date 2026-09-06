@@ -40,18 +40,18 @@ export default function PublicPage() {
   const LRef = useRef<any>(null);
   const polygonLayersRef = useRef<any[]>([]);
   const searchMarkerRef = useRef<any>(null);
+  const geojsonCacheRef = useRef<Record<number, any>>({});
 
   const [cartes, setCartes] = useState<CarteCouverture[]>([]);
   const [technologies, setTechnologies] = useState<string[]>([]);
   const [mapReady, setMapReady] = useState(false);
+  const [aucuneZone, setAucuneZone] = useState(false);
 
   const services = ['Voix/SMS', 'Data'];
 
   const [selectedTech, setSelectedTech] = useState<string>('3G');
   const [selectedService, setSelectedService] = useState<string>('Voix/SMS');
   const [selectedQualites, setSelectedQualites] = useState<string[]>([]);
-  // Cache GeoJSON pour eviter de recharger depuis le serveur a chaque filtre
-  const geojsonCacheRef = useRef<Record<number, any>>({});
   const [searchAddress, setSearchAddress] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -145,14 +145,15 @@ export default function PublicPage() {
     };
   }, []);
 
-  // ✅ Affichage des polygones — manuels + SHP importés via GeoJSON
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current || !LRef.current) return;
 
     const L = LRef.current;
     const map = mapInstanceRef.current;
 
-    // Supprimer les anciens layers
+    // ✅ Reset aucuneZone à chaque changement de filtre
+    setAucuneZone(false);
+
     polygonLayersRef.current.forEach(layer => {
       try { map.removeLayer(layer); } catch { }
     });
@@ -168,22 +169,18 @@ export default function PublicPage() {
       return true;
     });
 
-    if (cartesFiltrees.length === 0) return;
-
     const bounds: any[] = [];
-
-    // ✅ Charger GeoJSON avec cache — filtrage local sans requête serveur à chaque filtre
     const qualitesSnapshot = [...selectedQualites];
+
     const loadAllCartes = async () => {
       for (const carte of cartesFiltrees) {
         try {
-          // Utiliser le cache si disponible
           let geojson = geojsonCacheRef.current[carte.id];
           if (!geojson) {
             const res = await fetch(`http://localhost:3000/tiles/${carte.id}/geojson`);
             if (!res.ok) continue;
             geojson = await res.json();
-            geojsonCacheRef.current[carte.id] = geojson; // Mettre en cache
+            geojsonCacheRef.current[carte.id] = geojson;
           }
 
           if (!geojson?.features?.length) continue;
@@ -230,6 +227,11 @@ export default function PublicPage() {
       if (bounds.length > 0) {
         try { map.fitBounds(bounds, { padding: [30, 30] }); } catch { }
       }
+
+      // ✅ Afficher message si aucune zone trouvée
+      if (polygonLayersRef.current.length === 0) {
+        setAucuneZone(true);
+      }
     };
 
     loadAllCartes();
@@ -254,19 +256,35 @@ export default function PublicPage() {
         const { lat, lon } = data[0];
         mapInstanceRef.current.setView([parseFloat(lat), parseFloat(lon)], 12);
         const L = LRef.current;
+
+        // ✅ Supprimer ancien marqueur
         if (searchMarkerRef.current) {
           try { mapInstanceRef.current.removeLayer(searchMarkerRef.current); } catch { }
           searchMarkerRef.current = null;
         }
+
         const locationIcon = L.divIcon({
           className: '',
           html: `<div style="background:#ED1C24;color:white;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px rgba(237,28,36,0.2);border:2px solid white;"></div>`,
           iconAnchor: [12, 12], iconSize: [24, 24],
         });
-        searchMarkerRef.current = L.marker([parseFloat(lat), parseFloat(lon)], { icon: locationIcon })
-          .addTo(mapInstanceRef.current)
-          .bindPopup(`<div style="font-family:sans-serif;font-size:12px;font-weight:700;color:#111;">${searchAddress}</div>`)
-          .openPopup();
+
+        const marker = L.marker([parseFloat(lat), parseFloat(lon)], { icon: locationIcon })
+          .addTo(mapInstanceRef.current);
+
+        marker.bindPopup(`
+          <div style="font-family:sans-serif;font-size:12px;font-weight:700;color:#111;min-width:140px;">
+            <p style="margin:0 0 6px;">${searchAddress}</p>
+          </div>
+        `, { closeButton: true }).openPopup();
+
+        // ✅ Supprimer marqueur quand popup se ferme
+        marker.on('popupclose', () => {
+          try { mapInstanceRef.current.removeLayer(marker); } catch { }
+          searchMarkerRef.current = null;
+        });
+
+        searchMarkerRef.current = marker;
       } else {
         alert('Adresse non trouvée en Tunisie');
       }
@@ -282,10 +300,13 @@ export default function PublicPage() {
     setSelectedService('Voix/SMS');
     setSelectedQualites([]);
     setSearchAddress('');
+
+    // ✅ Supprimer marqueur de recherche
     if (searchMarkerRef.current && mapInstanceRef.current) {
       try { mapInstanceRef.current.removeLayer(searchMarkerRef.current); } catch { }
       searchMarkerRef.current = null;
     }
+
     if (mapInstanceRef.current) mapInstanceRef.current.setView([34.5, 9.5], 6);
   };
 
@@ -399,14 +420,21 @@ export default function PublicPage() {
         <div className="flex-1 relative bg-gray-50">
           <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-          {cartes.length === 0 && (
+          {/* ✅ Message aucune carte publiée */}
+          {(cartes.length === 0 || aucuneZone) && (
             <div className="absolute inset-0 flex items-center justify-center z-[500] bg-white/60 backdrop-blur-sm pointer-events-none">
               <div className="bg-white border border-gray-100 rounded-3xl shadow-2xl p-8 text-center max-w-sm mx-4 pointer-events-auto">
                 <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <Map size={32} className="text-gray-300" />
                 </div>
-                <p className="text-gray-900 font-black text-sm uppercase tracking-widest mb-1">Aucun réseau publié</p>
-                <p className="text-gray-400 text-xs font-medium leading-relaxed">Les zones de couverture s'afficheront après validation par l'administration.</p>
+                <p className="text-gray-900 font-black text-sm uppercase tracking-widest mb-1">
+                  {cartes.length === 0 ? 'Aucun réseau publié' : 'Aucune zone disponible'}
+                </p>
+                <p className="text-gray-400 text-xs font-medium leading-relaxed">
+                  {cartes.length === 0
+                    ? "Les zones de couverture s'afficheront après validation par l'administration."
+                    : "Aucune carte ne correspond à la technologie et au service sélectionnés."}
+                </p>
               </div>
             </div>
           )}

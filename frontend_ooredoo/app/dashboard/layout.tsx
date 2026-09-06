@@ -8,7 +8,7 @@ import { Toaster } from 'react-hot-toast';
 import toast from 'react-hot-toast';
 import {
   LayoutDashboard, Map, PlusCircle, FileText,
-  Cpu, LogOut, Menu, ChevronLeft, Send, X, MessageSquare, ShieldCheck
+  LogOut, Menu, ChevronLeft, Send, X, MessageSquare, ShieldCheck
 } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
 import NotificationsPanel from '@/components/NotificationsPanel';
@@ -72,7 +72,7 @@ function ChatBot() {
             {messages.length === 0 && (
               <div className="text-center mt-12 space-y-2">
                 <div className="w-12 h-12 bg-white rounded-xl border border-gray-100 flex items-center justify-center mx-auto text-gray-400 shadow-sm">
-                  <Cpu size={20} />
+                  <MessageSquare size={20} />
                 </div>
                 <h4 className="text-xs font-bold text-gray-800 tracking-tight">Support Technique SIG</h4>
                 <p className="text-gray-400 text-xs px-4 font-medium leading-relaxed">
@@ -163,7 +163,7 @@ export default function IngenieurLayout({ children }: { children: React.ReactNod
     hasChecked.current = true;
 
     const checkAuth = async () => {
-      const raw = localStorage.getItem('auth_user');
+      const raw = sessionStorage.getItem('auth_user');
       if (!raw) { router.replace('/login'); return; }
       const user = JSON.parse(raw);
       if (!user || user.role !== 'ingenieur') { router.replace('/login'); return; }
@@ -208,7 +208,7 @@ export default function IngenieurLayout({ children }: { children: React.ReactNod
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_user');
+    sessionStorage.removeItem('auth_user');
     router.push('/login');
   };
 
@@ -243,10 +243,9 @@ export default function IngenieurLayout({ children }: { children: React.ReactNod
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           <SidebarItem href="/dashboard" icon={<LayoutDashboard size={16} />} label="Dashboard" active={pathname === '/dashboard'} collapsed={collapsed} />
           <SidebarItem href="/dashboard/cartes" icon={<Map size={16} />} label="Mes cartes" active={pathname.startsWith('/dashboard/cartes')} collapsed={collapsed} />
-          <SidebarItem href="/dashboard/creer" icon={<PlusCircle size={16} />} label="Nouveau Projet" active={pathname.includes('/creer')} collapsed={collapsed} />
+          <SidebarItem href="/dashboard/creer" icon={<PlusCircle size={16} />} label="Nouvelle carte" active={pathname.includes('/creer')} collapsed={collapsed} />
           <div className="my-3 border-t border-gray-100 mx-2" />
           <SidebarItem href="/dashboard/demandes" icon={<FileText size={16} />} label="Demandes Admin" active={pathname.startsWith('/dashboard/demandes')} collapsed={collapsed} />
-          <SidebarItem href="/dashboard/ingenieur/technologies" icon={<Cpu size={16} />} label="Technologies" active={pathname.includes('/ingenieur/technologies')} collapsed={collapsed} />
         </nav>
 
         <button
@@ -347,3 +346,5 @@ export default function IngenieurLayout({ children }: { children: React.ReactNod
     </div>
   );
 }
+
+

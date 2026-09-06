@@ -45,13 +45,19 @@ export default function DemandeDetailPage() {
   const [showRefusModal, setShowRefusModal] = useState<boolean>(false);
   const [justification, setJustification] = useState<string>('');
   const [refusLoading, setRefusLoading] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // ✅ États pour le modal d'association de carte
   const [showCarteModal, setShowCarteModal] = useState(false);
   const [cartesExistantes, setCartesExistantes] = useState<CarteExistante[]>([]);
   const [cartesLoading, setCartesLoading] = useState(false);
   const [searchCarte, setSearchCarte] = useState('');
   const [associationLoading, setAssociationLoading] = useState(false);
+
+  // ✅ Détecter le rôle
+  useEffect(() => {
+    const rawAdmin = sessionStorage.getItem('auth_admin');
+    if (rawAdmin) setIsAdmin(true);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -84,14 +90,17 @@ export default function DemandeDetailPage() {
     setShowCarteModal(true);
     setCartesLoading(true);
     try {
-      const raw = localStorage.getItem('auth_user');
+      const raw = sessionStorage.getItem('auth_user');
       if (!raw) { router.push('/login'); return; }
       const user = JSON.parse(raw);
+
       const res = await fetch('http://localhost:3000/cartes-couverture');
       if (res.ok) {
         const data = await res.json();
-        // Filtrer les cartes de l'ingénieur connecté
-        const mesCarte = data.filter((c: any) => c.user?.id === user.id);
+        // ✅ Comparer en String pour éviter problèmes number/string
+        const mesCarte = data.filter((c: any) => 
+          String(c.user?.id) === String(user.id)
+        );
         setCartesExistantes(mesCarte);
       }
     } catch {
@@ -105,18 +114,24 @@ export default function DemandeDetailPage() {
   const handleAssocierCarte = async (carteId: number, carteNom: string) => {
     setAssociationLoading(true);
     try {
+      // ✅ 1. Associer la carte à la demande
       const res = await fetch(`http://localhost:3000/demandes-cartes/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ carte_id: carteId, statut: 'accepte' }),
       });
-      if (res.ok) {
-        toast.success(`Carte "${carteNom}" associée à la demande`);
-        setDemande(prev => prev ? { ...prev, carte_id: carteId, statut: 'accepte' } : null);
-        setShowCarteModal(false);
-      } else {
-        toast.error('Erreur lors de l\'association');
-      }
+      if (!res.ok) { toast.error("Erreur lors de l'association"); return; }
+
+      // ✅ 2. Repasser la carte en attente
+      await fetch(`http://localhost:3000/cartes-couverture/${carteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statut: 'en_attente' }),
+      });
+
+      toast.success(`Carte "${carteNom}" associée — en attente de validation`);
+      setDemande(prev => prev ? { ...prev, carte_id: carteId, statut: 'accepte' } : null);
+      setShowCarteModal(false);
     } catch {
       toast.error('Erreur de connexion');
     } finally {
@@ -146,7 +161,7 @@ export default function DemandeDetailPage() {
       polygones: demande.polygones || [],
       demande_id: demande.id
     };
-    localStorage.setItem('carte_from_demande', JSON.stringify(carteData));
+    sessionStorage.setItem('carte_from_demande', JSON.stringify(carteData));
     toast.success('Données transférées vers le créateur');
     router.push('/dashboard/creer?from=demande');
   };
@@ -177,15 +192,13 @@ export default function DemandeDetailPage() {
     }
   };
 
-  const getQualiteColor = (qualite: string) => {
-    const map: Record<string, string> = { bonne: '#be1526', moyenne: '#ff0921', mauvaise: '#d66064' };
-    return map[qualite] || '#6b7280';
-  };
+  const getQualiteColor = (qualite: string) => ({
+    bonne: '#be1526', moyenne: '#ff0921', mauvaise: '#d66064'
+  }[qualite] || '#6b7280');
 
-  const getQualiteLabel = (qualite: string) => {
-    const map: Record<string, string> = { bonne: 'Très bonne', moyenne: 'Bonne', mauvaise: 'Limitée' };
-    return map[qualite] || qualite;
-  };
+  const getQualiteLabel = (qualite: string) => ({
+    bonne: 'Très bonne', moyenne: 'Bonne', mauvaise: 'Limitée'
+  }[qualite] || qualite);
 
   const cartesFiltrees = cartesExistantes.filter(c =>
     c.nom.toLowerCase().includes(searchCarte.toLowerCase())
@@ -287,7 +300,11 @@ export default function DemandeDetailPage() {
                   <p className="font-black text-gray-900 text-sm">Carte #{demande.carte_id}</p>
                 </div>
               </div>
-              <Link href={`/dashboard/cartes/${demande.carte_id}`}
+              <Link
+                href={isAdmin
+                  ? `/dashboard_admin/cartes/${demande.carte_id}`
+                  : `/dashboard/cartes/${demande.carte_id}`
+                }
                 className="px-4 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all">
                 Voir la carte
               </Link>
@@ -303,12 +320,13 @@ export default function DemandeDetailPage() {
           )}
         </div>
 
-        {/* Actions */}
+        {/* ✅ Actions — seulement pour l'ingénieur */}
         <div className="p-8 bg-gray-50/50 border-t border-gray-100 space-y-3">
-          {demande.statut === 'en_attente' && (
+
+          {/* ✅ Ingénieur — en_attente SANS carte */}
+          {!isAdmin && demande.statut === 'en_attente' && !demande.carte_id && (
             <>
               <div className="flex gap-3">
-                {/* Créer une nouvelle carte */}
                 <button onClick={handleCreateCard}
                   className="flex-[2] bg-green-600 hover:bg-black text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg">
                   <PlusCircle size={20} /> Créer une nouvelle carte
@@ -318,7 +336,6 @@ export default function DemandeDetailPage() {
                   <XCircle size={20} /> Refuser
                 </button>
               </div>
-              {/* ✅ Associer une carte existante */}
               <button onClick={handleOpenCarteModal}
                 className="w-full bg-black hover:bg-[#ED1C24] text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg">
                 <Link2 size={20} /> Associer une carte existante
@@ -326,7 +343,18 @@ export default function DemandeDetailPage() {
             </>
           )}
 
-          {demande.statut === 'accepte' && !demande.carte_id && (
+          {/* ✅ Ingénieur — en_attente AVEC carte */}
+          {!isAdmin && demande.statut === 'en_attente' && demande.carte_id && (
+            <div className="w-full bg-amber-50 border border-amber-200 rounded-2xl py-4 flex items-center justify-center gap-3">
+              <Clock size={18} className="text-amber-600" />
+              <span className="text-amber-700 font-black uppercase text-[10px] tracking-widest">
+                Carte associée — en attente de validation par l'administrateur
+              </span>
+            </div>
+          )}
+
+          {/* ✅ Ingénieur — accepte SANS carte */}
+          {!isAdmin && demande.statut === 'accepte' && !demande.carte_id && (
             <div className="flex gap-3">
               <button onClick={handleCreateCard}
                 className="flex-[2] bg-black text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 hover:bg-red-600 transition-all shadow-xl">
@@ -339,10 +367,42 @@ export default function DemandeDetailPage() {
             </div>
           )}
 
+          {/* ✅ Ingénieur — accepte AVEC carte */}
+          {!isAdmin && demande.statut === 'accepte' && demande.carte_id && (
+            <div className="w-full bg-emerald-50 border border-emerald-200 rounded-2xl py-4 flex items-center justify-center gap-3">
+              <CheckCircle size={18} className="text-emerald-600" />
+              <span className="text-emerald-700 font-black uppercase text-[10px] tracking-widest">
+                Demande traitée — carte associée avec succès
+              </span>
+            </div>
+          )}
+
+          {/* ✅ Admin — affiche seulement le statut */}
+          {isAdmin && demande.statut === 'en_attente' && (
+            <div className="w-full bg-amber-50 border border-amber-200 rounded-2xl py-4 flex items-center justify-center gap-3">
+              <Clock size={18} className="text-amber-600" />
+              <span className="text-amber-700 font-black uppercase text-[10px] tracking-widest">
+                En attente de traitement par l'ingénieur
+              </span>
+            </div>
+          )}
+
+          {isAdmin && demande.statut === 'accepte' && (
+            <div className="w-full bg-emerald-50 border border-emerald-200 rounded-2xl py-4 flex items-center justify-center gap-3">
+              <CheckCircle size={18} className="text-emerald-600" />
+              <span className="text-emerald-700 font-black uppercase text-[10px] tracking-widest">
+                Demande acceptée et traitée par l'ingénieur
+              </span>
+            </div>
+          )}
+
+          {/* ✅ Refus — visible par tout le monde */}
           {demande.statut === 'refuse' && (
             <div className="w-full bg-red-100/50 border border-red-200 rounded-2xl py-4 flex items-center justify-center gap-3">
               <XCircle size={18} className="text-red-600" />
-              <span className="text-red-700 font-black uppercase text-[10px] tracking-widest">Demande archivée (Refusée)</span>
+              <span className="text-red-700 font-black uppercase text-[10px] tracking-widest">
+                Demande archivée (Refusée)
+              </span>
             </div>
           )}
         </div>
@@ -362,7 +422,6 @@ export default function DemandeDetailPage() {
               </button>
             </div>
 
-            {/* Recherche */}
             <div className="relative mb-4">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input type="text" placeholder="Rechercher une carte..."
@@ -370,7 +429,6 @@ export default function DemandeDetailPage() {
                 value={searchCarte} onChange={(e) => setSearchCarte(e.target.value)} />
             </div>
 
-            {/* Liste des cartes */}
             <div className="flex-1 overflow-y-auto space-y-2">
               {cartesLoading ? (
                 <div className="flex justify-center py-8">

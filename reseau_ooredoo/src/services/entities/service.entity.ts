@@ -19,6 +19,9 @@ export class Service {
   @CreateDateColumn()
   created_at: Date;
 
-  @OneToMany(() => ServiceTechnology, (st) => st.service)
+  @OneToMany(() => ServiceTechnology, (st) => st.service, {
+    cascade: true,
+    onDelete: 'CASCADE',
+  })
   serviceTechnologies: ServiceTechnology[];
 }

@@ -27,13 +27,14 @@ export class CartesCouverture {
   @Column({ type: 'varchar', length: 255, nullable: true })
   statut: string;
 
-  // ✅ Commentaire de refus
   @Column({ type: 'text', nullable: true })
   commentaire_refus: string;
 
-  // ✅ Type du commentaire : 'note' ou 'rapport'
   @Column({ type: 'varchar', length: 50, nullable: true })
   type_commentaire: string;
+
+  @Column({ type: 'boolean', default: false })
+  is_duplicated: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

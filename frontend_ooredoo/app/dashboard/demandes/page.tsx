@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Eye, Map, PlusCircle, XCircle, CheckCircle, 
-  Clock, Send, Inbox, Calendar, Wifi, Radio 
+  Clock, Send, Calendar, Wifi, Radio, Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -37,9 +37,10 @@ export default function MesDemandesPage() {
   const [selectedDemandeId, setSelectedDemandeId] = useState<number | null>(null);
   const [justification, setJustification] = useState('');
   const [refusLoading, setRefusLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const raw = localStorage.getItem('auth_user');
+    const raw = sessionStorage.getItem('auth_user');
     if (!raw) { router.push('/login'); return; }
     const user = JSON.parse(raw);
     if (!user?.email) { router.push('/login'); return; }
@@ -65,8 +66,8 @@ export default function MesDemandesPage() {
   };
 
   const handleCreateCard = (demande: Demande) => {
-    localStorage.setItem('demande_id_source', String(demande.id));
-    localStorage.setItem('qualites_requises', JSON.stringify(demande.qualites));
+    sessionStorage.setItem('demande_id_source', String(demande.id));
+    sessionStorage.setItem('qualites_requises', JSON.stringify(demande.qualites));
     const carteData = {
       nom: demande.nom,
       description: demande.description,
@@ -75,7 +76,7 @@ export default function MesDemandesPage() {
       qualites: demande.qualites,
       polygones: demande.polygones || [],
     };
-    localStorage.setItem('carte_from_demande', JSON.stringify(carteData));
+    sessionStorage.setItem('carte_from_demande', JSON.stringify(carteData));
     toast.success('Configuration de la demande chargée');
     router.push('/dashboard/creer?from=demande');
   };
@@ -87,29 +88,18 @@ export default function MesDemandesPage() {
   };
 
   const handleRefuser = async () => {
-    if (!justification.trim()) {
-      toast.error('⚠️ Veuillez écrire une justification');
-      return;
-    }
+    if (!justification.trim()) { toast.error('Veuillez écrire une justification'); return; }
     if (!selectedDemandeId) return;
     setRefusLoading(true);
     try {
-      const response = await fetch(
-        `http://localhost:3000/demandes-cartes/${selectedDemandeId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            statut: 'refuse',
-            commentaire_admin: justification,
-          }),
-        }
-      );
+      const response = await fetch(`http://localhost:3000/demandes-cartes/${selectedDemandeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statut: 'refuse', commentaire_admin: justification }),
+      });
       if (response.ok) {
         toast.success('Demande refusée');
-        setDemandes(prev =>
-          prev.map(d => d.id === selectedDemandeId ? { ...d, statut: 'refuse' } : d)
-        );
+        setDemandes(prev => prev.map(d => d.id === selectedDemandeId ? { ...d, statut: 'refuse' } : d));
         setShowRefusModal(false);
       } else {
         toast.error('Erreur lors du refus');
@@ -121,6 +111,13 @@ export default function MesDemandesPage() {
     }
   };
 
+  const filteredDemandes = demandes.filter(d =>
+    d.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    d.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    d.technologie?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    d.service?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   const getQualitesBadges = (qualites: string[]) => {
     if (!qualites || qualites.length === 0) return null;
     return (
@@ -128,11 +125,8 @@ export default function MesDemandesPage() {
         {qualites.map(q => {
           const config = QUALITE_COLOR_MAP[q] || { bg: '#6b7280', text: '#ffffff', label: q };
           return (
-            <span 
-              key={q} 
-              style={{ backgroundColor: config.bg, color: config.text }}
-              className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm"
-            >
+            <span key={q} style={{ backgroundColor: config.bg, color: config.text }}
+              className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
               {config.label}
             </span>
           );
@@ -153,7 +147,6 @@ export default function MesDemandesPage() {
       refuse: <XCircle size={12}/>,
     };
     const labels = { en_attente: 'En attente', accepte: 'Acceptée', refuse: 'Refusée' };
-
     return (
       <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 border ${styles[statut as keyof typeof styles]}`}>
         {icons[statut as keyof typeof icons]}
@@ -162,14 +155,12 @@ export default function MesDemandesPage() {
     );
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col justify-center items-center h-96 gap-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#ff0921]" />
-        <p className="text-gray-400 font-black text-[10px] tracking-[0.2em] uppercase">Chargement de vos dossiers...</p>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="flex flex-col justify-center items-center h-96 gap-4">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#ff0921]" />
+      <p className="text-gray-400 font-black text-[10px] tracking-[0.2em] uppercase">Chargement de vos dossiers...</p>
+    </div>
+  );
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-10">
@@ -177,40 +168,56 @@ export default function MesDemandesPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <h1 className="text-3xl font-black text-gray-900 uppercase italic tracking-tight">Mes Demandes</h1>
-          <p className="text-gray-500 font-medium mt-1 flex items-center gap-2">
-            Assignées à : <span className="font-bold text-[#ff0921]">{userEmail}</span>
+          <p className="text-gray-500 font-medium mt-1">
+            <span className="font-bold text-[#ff0921]">{filteredDemandes.length}</span> demande(s) trouvée(s)
           </p>
         </div>
-        <Link href="/dashboard/creer">
-          <button className="bg-black text-white px-6 py-3.5 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center gap-3 hover:bg-[#ff0921] transition-all shadow-xl shadow-black/10 active:scale-95">
-            <PlusCircle size={18} /> Nouvelle carte libre
-          </button>
-        </Link>
+        <div className="flex items-center gap-3">
+          {/* Recherche */}
+          <div className="relative group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#ED1C24] transition-colors" size={16} />
+            <input
+              type="text"
+              placeholder="Rechercher une demande..."
+              className="pl-11 pr-5 py-3 bg-white border border-gray-200 rounded-2xl w-64 outline-none focus:border-[#ED1C24] transition-all shadow-sm font-medium text-sm"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Link href="/dashboard/creer">
+            <button className="bg-black text-white px-6 py-3.5 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center gap-3 hover:bg-[#ff0921] transition-all shadow-xl shadow-black/10 active:scale-95">
+              <PlusCircle size={18} /> Nouvelle carte libre
+            </button>
+          </Link>
+        </div>
       </div>
 
       {/* Empty State */}
-      {demandes.length === 0 ? (
+      {filteredDemandes.length === 0 ? (
         <div className="bg-white rounded-[2.5rem] p-20 text-center border border-gray-100 shadow-xl shadow-black/5">
           <div className="bg-gray-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
             <Map className="text-gray-300" size={40} />
           </div>
-          <h3 className="text-xl font-black text-gray-800 uppercase italic">Aucune demande assignée</h3>
+          <h3 className="text-xl font-black text-gray-800 uppercase italic">
+            {searchTerm ? 'Aucune demande trouvée' : 'Aucune demande assignée'}
+          </h3>
           <p className="text-gray-400 mt-2 font-medium mb-6">
-            L'administrateur n'a pas encore créé de demandes de planification réseau pour votre compte.
+            {searchTerm ? 'Essayez avec un autre terme de recherche.' : "L'administrateur n'a pas encore créé de demandes pour votre compte."}
           </p>
-          <Link href="/dashboard/creer">
-            <button className="inline-flex items-center gap-3 bg-red-600 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all shadow-lg shadow-red-500/10">
-              <PlusCircle size={16} /> Créer une carte libre
-            </button>
-          </Link>
+          {!searchTerm && (
+            <Link href="/dashboard/creer">
+              <button className="inline-flex items-center gap-3 bg-red-600 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all shadow-lg shadow-red-500/10">
+                <PlusCircle size={16} /> Créer une carte libre
+              </button>
+            </Link>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6">
-          {demandes.map((demande) => (
+          {filteredDemandes.map((demande) => (
             <div key={demande.id} className="group bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 hover:shadow-2xl hover:shadow-red-500/5 transition-all duration-300 overflow-hidden relative">
-              
               <div className="flex flex-col lg:flex-row justify-between gap-6">
-                {/* Section Gauche : Infos Principales */}
+                {/* Infos */}
                 <div className="flex-1 space-y-5">
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="p-3 text-white rounded-2xl shadow-lg" style={{ backgroundColor: QUALITE_COLOR_MAP.moyenne.bg }}>
@@ -236,14 +243,14 @@ export default function MesDemandesPage() {
                   </div>
                 </div>
 
-                {/* Section Droite : Actions */}
+                {/* Actions */}
                 <div className="flex flex-row lg:flex-col justify-end gap-3 pt-4 lg:pt-0 border-t lg:border-t-0 border-gray-50 min-w-[200px]">
                   <Link href={`/dashboard/demandes/${demande.id}`} className="flex-1 lg:flex-none">
                     <button className="w-full px-5 py-3.5 bg-gray-100 text-gray-600 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-gray-200 transition-all flex items-center justify-center gap-2">
-                      <Eye size={16} /> Détails
+                      <Eye size={16} /> Consulter
                     </button>
                   </Link>
-                  
+
                   {demande.statut !== 'refuse' && (
                     <button
                       onClick={() => handleCreateCard(demande)}
@@ -268,13 +275,13 @@ export default function MesDemandesPage() {
         </div>
       )}
 
-      {/* Modal de Refus */}
+      {/* Modal Refus */}
       {showRefusModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-[2rem] shadow-2xl p-8 w-full max-w-md border border-gray-100 animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-[2rem] shadow-2xl p-8 w-full max-w-md border border-gray-100">
             <h2 className="text-2xl font-black text-gray-900 mb-2 italic">REFUSER LA MISSION</h2>
             <p className="text-gray-400 text-sm mb-6 font-medium leading-relaxed">
-              Veuillez indiquer pourquoi vous ne pouvez pas traiter cette demande. L'administrateur recevra votre notification.
+              Veuillez indiquer pourquoi vous ne pouvez pas traiter cette demande.
             </p>
             <textarea
               rows={4}
@@ -284,17 +291,12 @@ export default function MesDemandesPage() {
               onChange={(e) => setJustification(e.target.value)}
             />
             <div className="flex gap-4">
-              <button
-                onClick={() => setShowRefusModal(false)}
-                className="flex-1 px-6 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-gray-200 transition-all"
-              >
+              <button onClick={() => setShowRefusModal(false)}
+                className="flex-1 px-6 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-gray-200 transition-all">
                 Annuler
               </button>
-              <button
-                onClick={handleRefuser}
-                disabled={refusLoading}
-                className="flex-[2] px-6 py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-black transition-all disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg shadow-red-500/20"
-              >
+              <button onClick={handleRefuser} disabled={refusLoading}
+                className="flex-[2] px-6 py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-black transition-all disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg shadow-red-500/20">
                 <Send size={16} />
                 {refusLoading ? 'Envoi...' : 'Confirmer'}
               </button>
@@ -317,3 +319,5 @@ function InfoBox({ icon, label, value }: { icon: any, label: string, value: stri
     </div>
   );
 }
+
+

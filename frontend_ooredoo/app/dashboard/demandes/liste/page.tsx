@@ -223,3 +223,5 @@ function SmallInfo({ icon, label, value }: { icon: any, label: string, value: st
     </div>
   );
 }
+
+

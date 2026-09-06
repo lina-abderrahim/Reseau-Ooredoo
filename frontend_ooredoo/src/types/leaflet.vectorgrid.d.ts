@@ -6,3 +6,4 @@ declare module 'leaflet.vectorgrid' {
   }
   function vectorgrid(options?: any): any;
 }
+

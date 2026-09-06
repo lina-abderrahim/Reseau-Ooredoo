@@ -39,7 +39,8 @@ export default function ParametresPage() {
   const [serviceLoading, setServiceLoading] = useState(false);
 
   useEffect(() => {
-    const raw = localStorage.getItem('auth_user');
+    // ✅ Lire auth_admin
+    const raw = sessionStorage.getItem('auth_admin');
     if (!raw) { router.push('/login'); return; }
     const user = JSON.parse(raw);
     setCurrentUser(user);
@@ -86,7 +87,8 @@ export default function ParametresPage() {
       });
       if (response.ok) {
         const updated = { ...currentUser, name };
-        localStorage.setItem('auth_user', JSON.stringify(updated));
+        // ✅ Mettre à jour auth_admin
+        sessionStorage.setItem('auth_admin', JSON.stringify(updated));
         setCurrentUser(updated);
         setConfirmPasswordProfil('');
         toast.success('Nom mis à jour');
@@ -168,9 +170,9 @@ export default function ParametresPage() {
   };
 
   const tabs = [
-    { key: 'profil',       label: 'Profil',                  icon: <User size={16} /> },
-    { key: 'securite',     label: 'Sécurité',                icon: <Lock size={16} /> },
-    { key: 'technologies', label: 'Technologies & Services',  icon: <Wifi size={16} /> },
+    { key: 'profil',       label: 'Profil',                 icon: <User size={16} /> },
+    { key: 'securite',     label: 'Sécurité',               icon: <Lock size={16} /> },
+    { key: 'technologies', label: 'Technologies & Services', icon: <Wifi size={16} /> },
   ];
 
   return (

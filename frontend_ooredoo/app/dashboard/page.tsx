@@ -111,7 +111,7 @@ export default function IngenieurDashboard() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem('auth_user');
+    const raw = sessionStorage.getItem('auth_user');
     if (raw) {
       const user = JSON.parse(raw);
       setUserName(user.name || 'Ingénieur');
@@ -273,3 +273,5 @@ export default function IngenieurDashboard() {
     </div>
   );
 }
+
+

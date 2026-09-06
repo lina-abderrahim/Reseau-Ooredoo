@@ -17,7 +17,7 @@ export default function ChangePasswordPage() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
-    const raw = localStorage.getItem('auth_user');
+    const raw = sessionStorage.getItem('auth_user');
     if (!raw) { router.push('/login'); return; }
     const user = JSON.parse(raw);
     // ✅ Si pas besoin de changer → rediriger
@@ -54,9 +54,9 @@ export default function ChangePasswordPage() {
       });
 
       if (response.ok) {
-        // ✅ Mettre à jour localStorage
+        // ✅ Mettre à jour sessionStorage
         const updated = { ...currentUser, must_change_password: false };
-        localStorage.setItem('auth_user', JSON.stringify(updated));
+        sessionStorage.setItem('auth_user', JSON.stringify(updated));
         toast.success('Mot de passe mis à jour !');
         setTimeout(() => {
           router.push(currentUser.role === 'admin' ? '/dashboard_admin' : '/dashboard');
@@ -207,3 +207,5 @@ export default function ChangePasswordPage() {
     </div>
   );
 }
+
+

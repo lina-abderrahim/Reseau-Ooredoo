@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, IsBoolean, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class CreatePolygoneDto {
@@ -24,7 +24,7 @@ export class CreateCartesCouvertureDto {
   statut?: string;
 
   @IsNumber()
-  service_technologie_id: number;
+  service_technologie_id?: number;
 
   @IsOptional()
   @IsNumber()
@@ -36,8 +36,11 @@ export class CreateCartesCouvertureDto {
   @Type(() => CreatePolygoneDto)
   polygones?: CreatePolygoneDto[];
 
-  // ✅ session_id pour transférer les polygones SHP temp vers shp_layers
   @IsString()
   @IsOptional()
   session_id?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  is_duplicated?: boolean;
 }

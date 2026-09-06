@@ -26,15 +26,11 @@ const pgPool = new Pool({
   max: 20,
 });
 
-// ─────────────────────────────────────────────────────────
-// Chemins QGIS/GDAL
-// ─────────────────────────────────────────────────────────
 const QGIS_BIN    = 'C:\\Program Files\\QGIS 3.44.8\\bin';
 const OGR2OGR     = `${QGIS_BIN}\\ogr2ogr.exe`;
 const PROJ_DATA   = 'C:\\Program Files\\QGIS 3.44.8\\share\\proj';
 const GDAL_DATA   = 'C:\\Program Files\\QGIS 3.44.8\\share\\gdal';
 
-// Variables d'environnement QGIS nécessaires hors contexte QGIS
 const OGR_ENV = {
   ...process.env,
   PATH: `${QGIS_BIN};${process.env.PATH || ''}`,
@@ -43,7 +39,6 @@ const OGR_ENV = {
   GDAL_DATA,
 };
 
-// Connexion PostgreSQL pour ogr2ogr
 const OGR_PG_CONN = `PG:host=${process.env.DB_HOST || 'localhost'} port=${process.env.DB_PORT || '5432'} dbname=${process.env.DB_DATABASE || 'ooredoo_db'} user=${process.env.DB_USERNAME || 'postgres'} password=${process.env.DB_PASSWORD || 'nadouna123'}`;
 
 @Injectable()
@@ -55,10 +50,6 @@ export class CartesCouvertureService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  // ─────────────────────────────────────────────────────────
-  // Écriture des buffers SHP + DBF + SHX dans un dossier temporaire
-  // ogr2ogr a besoin des 3 fichiers : .shp .dbf .shx
-  // ─────────────────────────────────────────────────────────
   private async writeShpToDisk(
     shpBuffer: Buffer,
     dbfBuffer: Buffer,
@@ -71,25 +62,15 @@ export class CartesCouvertureService {
 
     fs.writeFileSync(shpPath, shpBuffer);
     fs.writeFileSync(dbfPath, dbfBuffer);
-
-    // Si le fichier .shx est fourni on l'écrit, sinon on demande à ogr2ogr de le recréer
-    if (shxBuffer) {
-      fs.writeFileSync(shxPath, shxBuffer);
-    }
+    if (shxBuffer) fs.writeFileSync(shxPath, shxBuffer);
 
     return { dir, shpPath };
   }
 
-  // ─────────────────────────────────────────────────────────
-  // Nettoyage du dossier temporaire après import
-  // ─────────────────────────────────────────────────────────
   private cleanupDir(dir: string) {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // Construction de la commande ogr2ogr
-  // ─────────────────────────────────────────────────────────
   private buildOgrCommand(
     shpPath: string,
     targetTable: string,
@@ -97,8 +78,6 @@ export class CartesCouvertureService {
     idValue: string | number,
     qualite: string,
   ): string {
-    // On utilise WHERE TRUE pour éviter les problèmes de guillemets dans -sql
-    // et on ajoute les colonnes via -addfields avec -sql simple
     return [
       `"${OGR2OGR}"`,
       '-f PostgreSQL',
@@ -109,14 +88,11 @@ export class CartesCouvertureService {
       '-t_srs EPSG:3857',
       '-lco GEOMETRY_NAME=geom',
       '--config PG_USE_COPY YES',
-      '--config SHAPE_RESTORE_SHX YES',  // Recrée le .shx si manquant
+      '--config SHAPE_RESTORE_SHX YES',
       `--config OGR_TRUNCATE NO`,
     ].join(' ');
   }
 
-  // ─────────────────────────────────────────────────────────
-  // Import SHP → shp_layers via ogr2ogr (ultra-rapide)
-  // ─────────────────────────────────────────────────────────
   async previewShp(
     shpBuffer: Buffer,
     dbfBuffer: Buffer,
@@ -142,10 +118,8 @@ export class CartesCouvertureService {
           '--config SHAPE_RESTORE_SHX YES',
         ].join(' ');
 
-        // Exécute avec les variables d'environnement QGIS
         await execAsync(command, { env: OGR_ENV });
 
-        // Met à jour carte_id et qualite après insertion
         await pgPool.query(
           `UPDATE shp_layers SET carte_id = $1, qualite = $2
            WHERE carte_id IS NULL OR carte_id = 0`,
@@ -167,9 +141,6 @@ export class CartesCouvertureService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // Import SHP temporaire (preview avant sauvegarde)
-  // ─────────────────────────────────────────────────────────
   async previewShpTemp(
     shpBuffer: Buffer,
     dbfBuffer: Buffer,
@@ -177,7 +148,6 @@ export class CartesCouvertureService {
     sessionId: string,
     shxBuffer?: Buffer,
   ) {
-    // Supprimer l'ancienne qualité pour ce sessionId
     await pgPool.query(
       'DELETE FROM shp_temp WHERE session_id = $1 AND qualite = $2',
       [sessionId, qualite],
@@ -186,7 +156,6 @@ export class CartesCouvertureService {
     const { dir, shpPath } = await this.writeShpToDisk(shpBuffer, dbfBuffer, shxBuffer);
 
     try {
-      // ✅ Récupérer le MAX id avant insertion pour identifier les nouvelles lignes
       const beforeResult = await pgPool.query('SELECT COALESCE(MAX(id), 0) AS max_id FROM shp_temp');
       const maxIdBefore = parseInt(beforeResult.rows[0].max_id, 10);
 
@@ -206,7 +175,6 @@ export class CartesCouvertureService {
 
       await execAsync(command, { env: OGR_ENV });
 
-      // ✅ Mettre à jour UNIQUEMENT les nouvelles lignes (id > maxIdBefore)
       await pgPool.query(
         `UPDATE shp_temp SET session_id = $1, qualite = $2
          WHERE id > $3`,
@@ -227,9 +195,6 @@ export class CartesCouvertureService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // Transfert temp → shp_layers
-  // ─────────────────────────────────────────────────────────
   async transferTempToLayers(sessionId: string, carteId: number) {
     try {
       await pgPool.query(
@@ -243,9 +208,6 @@ export class CartesCouvertureService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // Duplication des couches SHP
-  // ─────────────────────────────────────────────────────────
   async duplicateShpLayers(sourceCarteId: number, targetCarteId: number) {
     try {
       await pgPool.query(
@@ -258,9 +220,6 @@ export class CartesCouvertureService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // Suppression des couches SHP
-  // ─────────────────────────────────────────────────────────
   async deleteShpLayers(carteId: number, qualiteParam?: string) {
     try {
       if (qualiteParam) {
@@ -276,11 +235,8 @@ export class CartesCouvertureService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // CRUD standard
-  // ─────────────────────────────────────────────────────────
   async create(createDto: CreateCartesCouvertureDto) {
-    const { user_id, service_technologie_id, polygones, ...rest } = createDto;
+    const { user_id, service_technologie_id, polygones, session_id, ...rest } = createDto;
     const nouvelleCarte = this.carteRepository.create({
       ...rest,
       user: user_id ? ({ id: user_id } as User) : undefined,
@@ -292,7 +248,17 @@ export class CartesCouvertureService {
         qualite: p.qualite,
       })) ?? [],
     });
-    return await this.carteRepository.save(nouvelleCarte);
+    const saved = await this.carteRepository.save(nouvelleCarte);
+
+    if (createDto.is_duplicated === true) {
+      await pgPool.query(
+        'UPDATE cartes_couverture SET is_duplicated = true WHERE id = $1',
+        [saved.id],
+      );
+      saved.is_duplicated = true;
+    }
+
+    return saved;
   }
 
   async findAll(): Promise<CartesCouverture[]> {
@@ -324,6 +290,7 @@ export class CartesCouvertureService {
     });
     if (!carteAvant) throw new NotFoundException(`Carte #${id} non trouvée`);
 
+    // ✅ Gestion publication — supprimer les anciennes cartes publiées avec les mêmes qualités
     if (updateDto.statut === 'publie') {
       const qualitesCarte = carteAvant.polygones?.map((p) => p.qualite) || [];
       const serviceTechId = carteAvant.service_technologie?.id;
@@ -342,18 +309,64 @@ export class CartesCouvertureService {
       }
     }
 
-    const carte = await this.carteRepository.preload({ id, ...updateDto });
+    // ✅ Gestion session_id — transfert des polygones SHP temporaires vers shp_layers
+    if (updateDto.session_id) {
+      const sessionId = updateDto.session_id;
+
+      // ✅ Supprimer les anciens shp_layers de la qualité remplacée
+      if (updateDto.qualite) {
+        await pgPool.query(
+          'DELETE FROM shp_layers WHERE carte_id = $1 AND qualite = $2',
+          [id, updateDto.qualite],
+        );
+      }
+
+      // ✅ Transférer les nouveaux polygones SHP temp vers shp_layers
+      await pgPool.query(
+        `INSERT INTO shp_layers (carte_id, qualite, geom)
+         SELECT $1, qualite, geom FROM shp_temp WHERE session_id = $2`,
+        [id, sessionId],
+      );
+
+      // ✅ Nettoyer la table temp
+      await pgPool.query(
+        'DELETE FROM shp_temp WHERE session_id = $1',
+        [sessionId],
+      );
+    }
+
+    // ✅ Extraire session_id et qualite du DTO avant preload
+    // pour éviter de les passer à TypeORM
+    const { session_id, qualite, ...restDto } = updateDto as any;
+
+    const carte = await this.carteRepository.preload({ id, ...restDto });
     if (!carte) throw new NotFoundException(`Carte #${id} non trouvée`);
     const updated = await this.carteRepository.save(carte);
 
+    // ✅ Notifications
     if (updateDto.statut && carteAvant.user?.id) {
       let titre = '', message = '', type = '';
-      if (updateDto.statut === 'accepte')      { titre = 'Carte acceptée'; message = `Votre carte "${carteAvant.nom}" a été acceptée`; type = 'carte_acceptee'; }
-      else if (updateDto.statut === 'refuse')  { titre = 'Carte refusée';  message = `Votre carte "${carteAvant.nom}" a été refusée`;  type = 'carte_refusee'; }
-      else if (updateDto.statut === 'publie')  { titre = 'Carte publiée';  message = `Votre carte "${carteAvant.nom}" a été publiée`;  type = 'carte_publiee'; }
+      if (updateDto.statut === 'accepte') {
+        titre = 'Carte acceptée';
+        message = `Votre carte "${carteAvant.nom}" a été acceptée`;
+        type = 'carte_acceptee';
+      } else if (updateDto.statut === 'refuse') {
+        titre = 'Carte refusée';
+        message = `Votre carte "${carteAvant.nom}" a été refusée`;
+        type = 'carte_refusee';
+      } else if (updateDto.statut === 'publie') {
+        titre = 'Carte publiée';
+        message = `Votre carte "${carteAvant.nom}" a été publiée`;
+        type = 'carte_publiee';
+      }
 
       if (titre) {
-        const notif = await this.notificationsService.create({ user_id: carteAvant.user.id, titre, message, type });
+        const notif = await this.notificationsService.create({
+          user_id: carteAvant.user.id,
+          titre,
+          message,
+          type,
+        });
         this.notificationsGateway.sendNotificationToUser(carteAvant.user.id, notif);
       }
     }

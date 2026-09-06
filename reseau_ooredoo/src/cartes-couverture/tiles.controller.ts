@@ -14,6 +14,76 @@ const pool = new Pool({
 export class TilesController {
 
   // ─────────────────────────────────────────────
+  // BBox — ultra-léger pour fitBounds
+  // GET /tiles/:carte_id/bbox
+  // ─────────────────────────────────────────────
+  @Get(':carte_id/bbox')
+  async getBbox(
+    @Param('carte_id') carteIdParam: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const carteId = parseInt(carteIdParam, 10);
+      if (isNaN(carteId)) return res.status(400).json({ message: 'ID invalide' });
+
+      const result = await pool.query(`
+        SELECT
+          ST_XMin(ST_Extent(ST_Transform(geom, 4326))) as xmin,
+          ST_YMin(ST_Extent(ST_Transform(geom, 4326))) as ymin,
+          ST_XMax(ST_Extent(ST_Transform(geom, 4326))) as xmax,
+          ST_YMax(ST_Extent(ST_Transform(geom, 4326))) as ymax
+        FROM shp_layers
+        WHERE carte_id = $1
+      `, [carteId]);
+
+      const row = result.rows[0];
+
+      // Si pas de shp_layers, essayer polygones manuels
+      if (!row || row.xmin === null) {
+        const polyResult = await pool.query(`
+          SELECT
+            MIN(lng::float) as xmin,
+            MIN(lat::float) as ymin,
+            MAX(lng::float) as xmax,
+            MAX(lat::float) as ymax
+          FROM (
+            SELECT
+              (json_array_elements(coordinates::json)->0)::text as lng,
+              (json_array_elements(coordinates::json)->1)::text as lat
+            FROM polygones
+            WHERE carte_id = $1
+          ) coords
+        `, [carteId]);
+
+        const polyRow = polyResult.rows[0];
+        if (!polyRow || polyRow.xmin === null) {
+          return res.json(null);
+        }
+
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.json({
+          xmin: parseFloat(polyRow.xmin),
+          ymin: parseFloat(polyRow.ymin),
+          xmax: parseFloat(polyRow.xmax),
+          ymax: parseFloat(polyRow.ymax),
+        });
+      }
+
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.json({
+        xmin: parseFloat(row.xmin),
+        ymin: parseFloat(row.ymin),
+        xmax: parseFloat(row.xmax),
+        ymax: parseFloat(row.ymax),
+      });
+
+    } catch (error) {
+      console.error('Erreur bbox:', error);
+      return res.status(500).json({ message: 'Erreur serveur' });
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // GeoJSON — carte sauvegardée (shp_layers + polygones manuels)
   // GET /tiles/:carte_id/geojson
   // ─────────────────────────────────────────────
@@ -57,7 +127,7 @@ export class TilesController {
                 'type', 'Feature',
                 'geometry', json_build_object(
                   'type', 'Polygon',
-                  'coordinates', coordinates
+                  'coordinates', json_build_array(coordinates::json)
                 ),
                 'properties', json_build_object('qualite', qualite, 'source', 'manual')
               )
@@ -85,7 +155,7 @@ export class TilesController {
   }
 
   // ─────────────────────────────────────────────
-  // ✅ GeoJSON — session temporaire (preview import SHP)
+  // GeoJSON — session temporaire (preview import SHP)
   // GET /tiles/temp/:session_id/geojson
   // ─────────────────────────────────────────────
   @Get('temp/:session_id/geojson')
@@ -125,7 +195,7 @@ export class TilesController {
   }
 
   // ─────────────────────────────────────────────
-  // MVT — shp_layers (carte principale créer/modifier)
+  // MVT — shp_layers (carte principale)
   // GET /tiles/:carte_id/:z/:x/:y.pbf
   // ─────────────────────────────────────────────
   @Get(':carte_id/:z/:x/:y.pbf')

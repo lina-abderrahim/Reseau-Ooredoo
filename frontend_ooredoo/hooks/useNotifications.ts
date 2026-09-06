@@ -83,3 +83,4 @@ export function useNotifications(userId: number | null) {
 
   return { notifications, unreadCount, markAsRead, markAllAsRead, connected };
 }
+

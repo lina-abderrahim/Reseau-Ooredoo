@@ -1,13 +1,23 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Map, User, Calendar, CheckCircle, XCircle,
-  Clock, FileText, StickyNote, X, Send, Globe, Wifi, Radio
+  Clock, FileText, StickyNote, X, Send, Globe, Wifi, Radio, Link2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import dynamic from 'next/dynamic';
+
+const ReadOnlyMap = dynamic(() => import('@/components/ReadOnlyMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full bg-gray-50 animate-pulse flex items-center justify-center">
+      <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Chargement de la carte...</p>
+    </div>
+  )
+});
 
 interface Carte {
   id: number;
@@ -51,9 +61,7 @@ export default function AdminCarteDetailPage() {
   const [carte, setCarte] = useState<Carte | null>(null);
   const [loading, setLoading] = useState(true);
   const [publierLoading, setPublierLoading] = useState(false);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const LRef = useRef<any>(null);
+  const [demandeLiee, setDemandeLiee] = useState<any>(null);
 
   const [etapeRefus, setEtapeRefus] = useState<null | 'choix' | 'rapport' | 'note'>(null);
   const [rapport, setRapport] = useState('');
@@ -65,8 +73,6 @@ export default function AdminCarteDetailPage() {
   const [noteTexte, setNoteTexte] = useState('');
   const [showNoteInput, setShowNoteInput] = useState(false);
   const [noteInputPos, setNoteInputPos] = useState({ x: 0, y: 0 });
-  const noteMarkersRef = useRef<any[]>([]);
-  const modeNoteRef = useRef(false);
 
   useEffect(() => { fetchCarte(); }, [id]);
 
@@ -85,6 +91,15 @@ export default function AdminCarteDetailPage() {
             console.error('Erreur parsing notes:', e);
           }
         }
+        fetch('http://localhost:3000/demandes-cartes')
+          .then(r => r.ok ? r.json() : [])
+          .then(demandes => {
+            const liee = Array.isArray(demandes)
+              ? demandes.find((d: any) => Number(d.carte_id) === Number(data.id))
+              : null;
+            setDemandeLiee(liee || null);
+          })
+          .catch(() => setDemandeLiee(null));
       } else {
         toast.error('Erreur de chargement');
       }
@@ -93,42 +108,6 @@ export default function AdminCarteDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const createNoteMarker = (L: any, map: any, note: NoteOnMap) => {
-    const noteIcon = L.divIcon({
-      className: '',
-      html: `
-        <div style="
-          background: #1e293b; color: white; width: 32px; height: 32px;
-          border-radius: 8px; display: flex; align-items: center;
-          justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-          cursor: pointer; font-size: 14px; border: 2px solid white; position: relative;
-        ">
-          <span style="font-weight: bold; font-family: sans-serif;">N</span>
-          <div style="
-            position: absolute; bottom: -7px; left: 50%;
-            transform: translateX(-50%);
-            width: 0; height: 0;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 7px solid #1e293b;
-          "></div>
-        </div>
-      `,
-      iconAnchor: [16, 39],
-      iconSize: [32, 39],
-    });
-
-    const marker = L.marker([note.lat, note.lng], { icon: noteIcon }).addTo(map);
-    marker.bindPopup(`
-      <div style="font-family:sans-serif;font-size:12px;min-width:150px;max-width:220px;">
-        <strong style="color:#1e293b;font-size:11px;text-transform:uppercase;">Note</strong>
-        <p style="color:#374151;margin:6px 0 0;line-height:1.5;font-weight:500;">${note.texte}</p>
-      </div>
-    `, { maxWidth: 250, closeButton: true });
-    marker.on('click', () => marker.openPopup());
-    return marker;
   };
 
   const renderCommentaireRefus = () => {
@@ -153,207 +132,14 @@ export default function AdminCarteDetailPage() {
     return <p className="text-sm text-red-800 font-medium whitespace-pre-line mt-2">{carte.commentaire_refus}</p>;
   };
 
-  const handleMapClick = (latlng: any, map: any) => {
-    if (!modeNoteRef.current) return;
-    const containerPoint = map.latLngToContainerPoint(latlng);
-    setPendingNote({ lat: latlng.lat, lng: latlng.lng });
-    setNoteInputPos({ x: containerPoint.x, y: containerPoint.y });
-    setNoteTexte('');
-    setShowNoteInput(true);
-  };
-
-  useEffect(() => {
-    if (!carte || !mapContainerRef.current) return;
-    if ((mapContainerRef.current as any)._leaflet_id) return;
-    if (mapInstanceRef.current) return;
-
-    const initMap = async () => {
-      try {
-        const L = (await import('leaflet')).default;
-        await import('leaflet/dist/leaflet.css');
-        await import('leaflet.vectorgrid');
-        LRef.current = L;
-
-        if (!mapContainerRef.current) return;
-        if ((mapContainerRef.current as any)._leaflet_id) return;
-
-        const map = L.map(mapContainerRef.current, {
-          dragging: true,
-          touchZoom: true,
-          scrollWheelZoom: true,
-          doubleClickZoom: true,
-          zoomSnap: 1,
-          wheelPxPerZoomLevel: 60,
-        }).setView([34.5, 9.5], 7);
-
-        mapInstanceRef.current = map;
-
-        const original = (map as any)._onZoomTransitionEnd;
-        (map as any)._onZoomTransitionEnd = function (...args: any[]) {
-          try { original.apply(this, args); } catch { }
-        };
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© Ooredoo Network Planning',
-        }).addTo(map);
-
-        map.zoomControl.setPosition('topright');
-
-        // Légende
-        const LegendControl = L.Control.extend({
-          onAdd() {
-            const div = L.DomUtil.create('div');
-            div.style.cssText = `
-              background: #111; padding: 10px 14px; border-radius: 12px;
-              font-family: sans-serif; font-size: 11px;
-              box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            `;
-            div.innerHTML = `
-              <p style="font-weight:900;text-transform:uppercase;margin:0 0 8px;color:white;font-size:10px;letter-spacing:0.1em;">Qualité réseau</p>
-              ${Object.entries(QUALITE_COLOR_MAP).map(([key, color]) => `
-                <div style="display:flex;align-items:center;gap:6px;margin:4px 0;">
-                  <span style="width:12px;height:12px;border-radius:50%;background:${color};display:inline-block;flex-shrink:0;"></span>
-                  <span style="color:#ccc;font-weight:700;font-size:11px;">${QUALITE_LABEL_MAP[key]}</span>
-                </div>
-              `).join('')}
-            `;
-            return div;
-          }
-        });
-        new LegendControl({ position: 'bottomleft' }).addTo(map);
-
-        const bounds: any[] = [];
-
-        carte.polygones?.forEach((polygone) => {
-          try {
-            const coords = JSON.parse(polygone.coordinates);
-            const latLngs = coords.map(([lng, lat]: [number, number]) => [lat, lng]);
-            const color = QUALITE_COLOR_MAP[polygone.qualite] || '#6b7280';
-            const poly = L.polygon(latLngs, { color, fillColor: color, fillOpacity: 0.4, weight: 3 }).addTo(map);
-
-            let polyMouseDownPos: { x: number; y: number } | null = null;
-            poly.on('mousedown', (e: any) => {
-              polyMouseDownPos = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
-            });
-            poly.on('click', (e: any) => {
-              if (!polyMouseDownPos) return;
-              const dx = Math.abs(e.originalEvent.clientX - polyMouseDownPos.x);
-              const dy = Math.abs(e.originalEvent.clientY - polyMouseDownPos.y);
-              polyMouseDownPos = null;
-              if (dx > 5 || dy > 5) return;
-              L.DomEvent.stopPropagation(e);
-              if (modeNoteRef.current) {
-                handleMapClick(e.latlng, map);
-              } else {
-                poly.openPopup();
-              }
-            });
-            poly.bindPopup(`
-              <div style="font-family:sans-serif;font-size:12px;">
-                <strong>Qualité :</strong> ${QUALITE_LABEL_MAP[polygone.qualite] || polygone.qualite}
-              </div>
-            `);
-            bounds.push(...latLngs);
-          } catch (e) {
-            console.error('Erreur parsing polygone:', e);
-          }
-        });
-
-        try {
-          const tileUrl = `http://localhost:3000/tiles/${carte.id}/{z}/{x}/{y}.pbf`;
-          const vectorGridLayer = (L as any).vectorGrid.protobuf(tileUrl, {
-            vectorTileLayerStyles: {
-              shp_layer: (properties: any) => {
-                const color = QUALITE_COLOR_MAP[properties.qualite] || '#6b7280';
-                return { fillColor: color, fillOpacity: 0.4, stroke: true, color, weight: 1.5, fill: true };
-              },
-            },
-            maxZoom: 19,
-            interactive: false,
-          });
-          vectorGridLayer.addTo(map);
-        } catch (e) {
-          console.error('Erreur VectorGrid:', e);
-        }
-
-        if (bounds.length > 0) {
-          map.fitBounds(bounds, { padding: [20, 20] });
-        }
-
-        let mouseDownTime = 0;
-        let mouseDownPos = { x: 0, y: 0 };
-        map.on('mousedown', (e: any) => {
-          mouseDownTime = Date.now();
-          mouseDownPos = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
-        });
-        map.on('click', (e: any) => {
-          if (!modeNoteRef.current) return;
-          const elapsed = Date.now() - mouseDownTime;
-          const dx = Math.abs(e.originalEvent.clientX - mouseDownPos.x);
-          const dy = Math.abs(e.originalEvent.clientY - mouseDownPos.y);
-          if (elapsed > 300 || dx > 5 || dy > 5) return;
-          handleMapClick(e.latlng, map);
-        });
-
-        setTimeout(() => { map.invalidateSize(); map.dragging.enable(); }, 300);
-
-        if (notesConfirmees.length > 0) {
-          noteMarkersRef.current = [];
-          notesConfirmees.forEach((note) => {
-            const marker = createNoteMarker(L, map, note);
-            noteMarkersRef.current.push({ id: note.id, marker });
-          });
-        }
-
-      } catch (error) {
-        console.error('Erreur Leaflet:', error);
-      }
-    };
-
-    initMap();
-
-    return () => {
-      if (mapInstanceRef.current) {
-        try { mapInstanceRef.current.remove(); } catch { }
-        mapInstanceRef.current = null;
-      }
-      if (mapContainerRef.current) {
-        (mapContainerRef.current as any)._leaflet_id = undefined;
-      }
-      noteMarkersRef.current = [];
-    };
-  }, [carte]);
-
-  useEffect(() => {
-    if (!mapInstanceRef.current || !LRef.current || notesConfirmees.length === 0) return;
-    noteMarkersRef.current.forEach(({ marker }) => {
-      try { mapInstanceRef.current.removeLayer(marker); } catch { }
-    });
-    noteMarkersRef.current = [];
-    notesConfirmees.forEach((note) => {
-      const marker = createNoteMarker(LRef.current, mapInstanceRef.current, note);
-      noteMarkersRef.current.push({ id: note.id, marker });
-    });
-  }, [notesConfirmees]);
-
-  useEffect(() => {
-    modeNoteRef.current = etapeRefus === 'note';
-    if (mapContainerRef.current) {
-      mapContainerRef.current.style.cursor = etapeRefus === 'note' ? 'crosshair' : '';
-    }
-    if (mapInstanceRef.current) mapInstanceRef.current.dragging.enable();
-  }, [etapeRefus]);
-
   const handleAddNote = () => {
-    if (!noteTexte.trim() || !pendingNote || !LRef.current || !mapInstanceRef.current) return;
+    if (!noteTexte.trim() || !pendingNote) return;
     const newNote: NoteOnMap = {
       id: Date.now().toString(),
       lat: pendingNote.lat,
       lng: pendingNote.lng,
       texte: noteTexte,
     };
-    const marker = createNoteMarker(LRef.current, mapInstanceRef.current, newNote);
-    noteMarkersRef.current.push({ id: newNote.id, marker });
     setNotes(prev => [...prev, newNote]);
     setShowNoteInput(false);
     setPendingNote(null);
@@ -362,11 +148,6 @@ export default function AdminCarteDetailPage() {
   };
 
   const handleDeleteNote = (noteId: string) => {
-    const found = noteMarkersRef.current.find(m => m.id === noteId);
-    if (found && mapInstanceRef.current) {
-      try { mapInstanceRef.current.removeLayer(found.marker); } catch { }
-    }
-    noteMarkersRef.current = noteMarkersRef.current.filter(m => m.id !== noteId);
     setNotes(prev => prev.filter(n => n.id !== noteId));
     setNotesConfirmees(prev => prev.filter(n => n.id !== noteId));
   };
@@ -421,8 +202,7 @@ export default function AdminCarteDetailPage() {
         toast.success(
           newStatut === 'accepte' ? 'Carte acceptée' :
           newStatut === 'refuse'  ? 'Carte refusée' :
-          newStatut === 'publie'  ? 'Carte publiée' :
-          'Statut mis à jour'
+          newStatut === 'publie'  ? 'Carte publiée' : 'Statut mis à jour'
         );
         setCarte(prev => prev ? { ...prev, statut: newStatut } : prev);
         if (newStatut !== 'refuse') setEtapeRefus(null);
@@ -448,10 +228,10 @@ export default function AdminCarteDetailPage() {
 
   const getStatutBadge = (statut: string) => {
     const styles: Record<string, { bg: string, text: string, icon: React.ReactNode, label: string }> = {
-      en_attente: { bg: 'bg-amber-50 border-amber-200',   text: 'text-amber-700',   icon: <Clock size={14}/>,       label: 'En attente' },
+      en_attente: { bg: 'bg-amber-50 border-amber-200',     text: 'text-amber-700',   icon: <Clock size={14}/>,       label: 'En attente' },
       accepte:    { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', icon: <CheckCircle size={14}/>, label: 'Acceptée' },
-      refuse:     { bg: 'bg-rose-50 border-rose-200',      text: 'text-rose-700',    icon: <XCircle size={14}/>,     label: 'Refusée' },
-      publie:     { bg: 'bg-blue-50 border-blue-200',      text: 'text-blue-700',    icon: <Globe size={14}/>,       label: 'Publiée' },
+      refuse:     { bg: 'bg-rose-50 border-rose-200',       text: 'text-rose-700',    icon: <XCircle size={14}/>,     label: 'Refusée' },
+      publie:     { bg: 'bg-blue-50 border-blue-200',       text: 'text-blue-700',    icon: <Globe size={14}/>,       label: 'Publiée' },
     };
     const config = styles[statut] || styles.en_attente;
     return (
@@ -505,11 +285,8 @@ export default function AdminCarteDetailPage() {
 
         {/* Panneau gauche */}
         <div className="space-y-6">
-
-          {/* Informations */}
           <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 space-y-4">
             <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Informations</h2>
-
             <div className="space-y-3">
               <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100">
                 <div className="p-2 bg-white rounded-xl shadow-sm text-[#ED1C24]"><User size={16} /></div>
@@ -534,9 +311,7 @@ export default function AdminCarteDetailPage() {
                 <div className="p-2 bg-white rounded-xl shadow-sm text-[#ED1C24]"><Wifi size={16} /></div>
                 <div>
                   <p className="text-[9px] text-gray-400 font-black uppercase">Technologie</p>
-                  <p className="font-black text-gray-900 text-sm">
-                    {carte.service_technologie?.technology?.nom_technologie || 'N/A'}
-                  </p>
+                  <p className="font-black text-gray-900 text-sm">{carte.service_technologie?.technology?.nom_technologie || 'N/A'}</p>
                 </div>
               </div>
 
@@ -544,9 +319,7 @@ export default function AdminCarteDetailPage() {
                 <div className="p-2 bg-white rounded-xl shadow-sm text-[#ED1C24]"><Radio size={16} /></div>
                 <div>
                   <p className="text-[9px] text-gray-400 font-black uppercase">Service</p>
-                  <p className="font-black text-gray-900 text-sm">
-                    {carte.service_technologie?.service?.nom_service || 'N/A'}
-                  </p>
+                  <p className="font-black text-gray-900 text-sm">{carte.service_technologie?.service?.nom_service || 'N/A'}</p>
                 </div>
               </div>
 
@@ -556,27 +329,45 @@ export default function AdminCarteDetailPage() {
                   <p className="text-sm text-gray-700 italic leading-relaxed">"{carte.description}"</p>
                 </div>
               )}
+
+              <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                <p className="text-[9px] text-gray-400 font-black uppercase mb-2">Origine</p>
+                {demandeLiee ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Link2 size={14} className="text-[#ED1C24] flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-black text-gray-900">Liée à une demande</p>
+                        <p className="text-[10px] text-[#ED1C24] font-black">#{demandeLiee.id} — {demandeLiee.nom}</p>
+                      </div>
+                    </div>
+                    <Link href={`/dashboard_admin/demandes/${demandeLiee.id}`}
+                      className="text-[10px] font-black text-gray-400 hover:text-[#ED1C24] transition-colors underline whitespace-nowrap">
+                      Voir
+                    </Link>
+                  </div>
+                ) : (
+                  <p className="text-xs font-black text-gray-500 flex items-center gap-2">
+                    <span>🆓</span> Carte libre — sans demande
+                  </p>
+                )}
+              </div>
             </div>
 
-            {/* Zones qualités */}
             {carte.polygones && carte.polygones.length > 0 && (
               <div>
                 <p className="text-[9px] text-gray-400 font-black uppercase mb-2">Zones configurées</p>
                 <div className="flex gap-2 flex-wrap">
-                  {carte.polygones.map((p, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-full text-[10px] font-black text-white"
-                      style={{ backgroundColor: QUALITE_COLOR_MAP[p.qualite] || '#6b7280' }}
-                    >
-                      {QUALITE_LABEL_MAP[p.qualite] || p.qualite}
+                  {[...new Set(carte.polygones.map(p => p.qualite))].map((q, idx) => (
+                    <span key={idx} className="px-2.5 py-1 rounded-full text-[10px] font-black text-white"
+                      style={{ backgroundColor: QUALITE_COLOR_MAP[q] || '#6b7280' }}>
+                      {QUALITE_LABEL_MAP[q] || q}
                     </span>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Commentaire refus */}
             {carte.statut === 'refuse' && carte.commentaire_refus && (
               <div className="bg-red-50 border-2 border-red-100 rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -592,7 +383,6 @@ export default function AdminCarteDetailPage() {
             )}
           </div>
 
-          {/* Notes en mode note */}
           {etapeRefus === 'note' && allNotes.length > 0 && (
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
               <p className="text-[9px] text-gray-400 font-black uppercase mb-3">Notes placées ({allNotes.length})</p>
@@ -615,7 +405,6 @@ export default function AdminCarteDetailPage() {
             </div>
           )}
 
-          {/* Actions */}
           {etapeRefus === null && (
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 space-y-3">
               <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">Actions</h2>
@@ -683,7 +472,6 @@ export default function AdminCarteDetailPage() {
             </div>
           )}
 
-          {/* Choix type refus */}
           {etapeRefus === 'choix' && (
             <div className="bg-white rounded-3xl border border-rose-100 shadow-sm p-6 space-y-3">
               <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Type de refus</h2>
@@ -702,16 +490,12 @@ export default function AdminCarteDetailPage() {
             </div>
           )}
 
-          {/* Rapport */}
           {etapeRefus === 'rapport' && (
             <div className="bg-white rounded-3xl border border-rose-100 shadow-sm p-6 space-y-3">
               <h2 className="text-[10px] font-black text-rose-600 uppercase tracking-[0.2em]">Rapport de refus</h2>
-              <textarea
-                value={rapport}
-                onChange={(e) => setRapport(e.target.value)}
+              <textarea value={rapport} onChange={(e) => setRapport(e.target.value)}
                 placeholder="Décrivez les raisons du refus..."
-                className="w-full h-32 p-3 text-sm border-2 border-gray-100 rounded-2xl focus:outline-none focus:border-[#ED1C24] resize-none font-medium italic"
-              />
+                className="w-full h-32 p-3 text-sm border-2 border-gray-100 rounded-2xl focus:outline-none focus:border-[#ED1C24] resize-none font-medium italic" />
               <button onClick={handleConfirmerRefusRapport} disabled={refusLoading}
                 className="w-full py-3.5 bg-[#ED1C24] text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 hover:bg-black transition-all disabled:opacity-50">
                 {refusLoading ? 'Envoi...' : 'Confirmer le refus'}
@@ -723,7 +507,6 @@ export default function AdminCarteDetailPage() {
             </div>
           )}
 
-          {/* Mode note */}
           {etapeRefus === 'note' && (
             <div className="bg-white rounded-3xl border border-rose-100 shadow-sm p-6 space-y-3">
               <div className="flex items-center gap-2">
@@ -736,11 +519,6 @@ export default function AdminCarteDetailPage() {
                 <Send size={16}/> {refusLoading ? 'Envoi...' : `Confirmer (${notes.length} note${notes.length > 1 ? 's' : ''})`}
               </button>
               <button onClick={() => {
-                notes.forEach(n => {
-                  const found = noteMarkersRef.current.find(m => m.id === n.id);
-                  if (found && mapInstanceRef.current) { try { mapInstanceRef.current.removeLayer(found.marker); } catch { } }
-                });
-                noteMarkersRef.current = [];
                 setNotes([]);
                 setEtapeRefus(null);
                 setShowNoteInput(false);
@@ -753,7 +531,6 @@ export default function AdminCarteDetailPage() {
 
         {/* Section carte */}
         <div className="lg:col-span-2 space-y-6">
-
           {etapeRefus === 'note' && (
             <div className="px-4 py-3 bg-[#ED1C24] text-white rounded-2xl flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-lg">
               <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
@@ -767,25 +544,34 @@ export default function AdminCarteDetailPage() {
               <span className="text-xs font-black uppercase tracking-widest">Aperçu géographique</span>
             </div>
             <div className="relative" style={{ height: '580px' }}>
-              <div ref={mapContainerRef} className="w-full h-full z-0" />
+              {/* ✅ polygons local + MVT SHP + mode note */}
+              <ReadOnlyMap
+                polygons={carte.polygones || []}
+                carteId={carte.id}
+                commentaire_refus={etapeRefus === 'note' ? undefined : carte.commentaire_refus}
+                type_commentaire={etapeRefus === 'note' ? undefined : carte.type_commentaire}
+                modeNote={etapeRefus === 'note'}
+                notes={etapeRefus === 'note' ? notes : []}
+                onMapClick={(lat, lng, x, y) => {
+                  setPendingNote({ lat, lng });
+                  setNoteInputPos({ x, y });
+                  setNoteTexte('');
+                  setShowNoteInput(true);
+                }}
+              />
 
-              {showNoteInput && (
-                <div
-                  className="absolute bg-white p-4 rounded-2xl shadow-2xl border border-gray-200 z-[1000] w-64 space-y-3"
-                  style={{ top: `${noteInputPos.y + 10}px`, left: `${noteInputPos.x + 10}px` }}
-                >
+              {etapeRefus === 'note' && showNoteInput && (
+                <div className="absolute bg-white p-4 rounded-2xl shadow-2xl border border-gray-200 z-[1000] w-64 space-y-3"
+                  style={{ top: `${noteInputPos.y + 10}px`, left: `${noteInputPos.x + 10}px` }}>
                   <div className="flex items-center justify-between">
                     <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Nouvelle note</span>
                     <button onClick={() => { setShowNoteInput(false); setPendingNote(null); }} className="text-gray-400 hover:text-red-500">
                       <X size={14} />
                     </button>
                   </div>
-                  <textarea
-                    value={noteTexte}
-                    onChange={(e) => setNoteTexte(e.target.value)}
+                  <textarea value={noteTexte} onChange={(e) => setNoteTexte(e.target.value)}
                     placeholder="Décrivez le problème sur cette zone..."
-                    className="w-full h-20 p-2.5 text-xs border-2 border-gray-100 rounded-xl focus:outline-none focus:border-[#ED1C24] resize-none font-medium italic"
-                  />
+                    className="w-full h-20 p-2.5 text-xs border-2 border-gray-100 rounded-xl focus:outline-none focus:border-[#ED1C24] resize-none font-medium italic" />
                   <button onClick={handleAddNote}
                     className="w-full py-2 bg-slate-900 text-white font-black rounded-xl text-xs uppercase tracking-widest hover:bg-black transition-colors">
                     Enregistrer

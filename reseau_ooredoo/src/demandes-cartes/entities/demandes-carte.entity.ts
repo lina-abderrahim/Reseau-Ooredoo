@@ -18,7 +18,7 @@ export class Demande {
   service: string;
 
   @Column({ type: 'json', nullable: true })
-  qualites: string[]; // ✅ tableau au lieu de string
+  qualites: string[];
 
   @Column({ type: 'json', nullable: true })
   polygones: any[];
@@ -37,6 +37,9 @@ export class Demande {
 
   @Column({ nullable: true })
   commentaire_admin: string;
+
+  @Column({ nullable: true })
+  carte_id: number; // ✅ champ ajouté
 
   @CreateDateColumn()
   date_creation: Date;

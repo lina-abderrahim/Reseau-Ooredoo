@@ -10,3 +10,5 @@ export default function HomePage() {
   // Retourne null car la redirection est prioritaire côté serveur
   return null;
 }
+
+
